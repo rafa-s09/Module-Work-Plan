@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────
+# MWP — estado operacional
+# Travas e execuções são locais e temporárias.
+# O ledger de IDs é versionado para não perder a numeração.
+# ─────────────────────────────────────────────
+.mwp/*
+!.mwp/ledger.json
+
+# Diretórios de trabalho isolados por task (worktrees criadas pelo despachante)
+.worktrees/
+
+# ─────────────────────────────────────────────
+# Segredos e ambiente
+# ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ─────────────────────────────────────────────
+# Configurações locais de agentes
+# ─────────────────────────────────────────────
+.claude/settings.local.json
+CLAUDE.local.md
+
+# ─────────────────────────────────────────────
+# Rust (CLI em src/client — Cargo.lock é versionado)
+# ─────────────────────────────────────────────
+target/
+
+# ─────────────────────────────────────────────
+# Logs e temporários
+# ─────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+
+# ─────────────────────────────────────────────
+# Sistema operacional
+# ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─────────────────────────────────────────────
+# Editores
+# ─────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo

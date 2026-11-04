@@ -1,0 +1,11 @@
+[package]
+name = "mwp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "CLI for MWP (Module Work Plan): create, check and navigate the mwp/ documentation."
+license = "Apache-2.0"
+
+[[bin]]
+name = "mwp"
+path = "src/main.rs"
