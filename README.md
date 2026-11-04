@@ -66,7 +66,7 @@ Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder
 3. Create a task: `mwp task new "Order discount" --modules order`.
 4. Ask your agent: *"Execute task T-0001"*.
 
-See the **[guide](assets/docs/guide.md)** for the full workflow, the skill and every CLI option.
+See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and every CLI option, and **[the philosophy](assets/docs/philosophy.md)** for who does what, and why.
 
 ## CLI
 
@@ -92,7 +92,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 | [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |
-| [`assets/docs/`](assets/docs) | Guide |
+| [`assets/docs/`](assets/docs) | Guide and philosophy |
 
 ## License
 

@@ -1,6 +1,6 @@
 # Using MWP: skill and CLI
 
-This guide covers the day-to-day use of MWP: installing the `mwp` CLI, setting up a project, the workflow with an agent, and every command. For the ideas behind the format, start with the [README](../../README.md).
+This guide covers the day-to-day use of MWP: installing the `mwp` CLI, setting up a project, the workflow with an agent, and every command. For the ideas behind the format, start with the [README](../../README.md); for who does what and why, read [the philosophy](philosophy.md).
 
 - [1. Install](#1-install)
 - [2. Set up a project](#2-set-up-a-project)
