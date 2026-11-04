@@ -126,6 +126,9 @@ impl Project {
         let mut files = Vec::new();
         walk(&mwp, &mut files);
         files.sort();
+        // content/ holds the project's resources, not MWP docs; its .md files may carry unrelated front matter.
+        let content = mwp.join("content");
+        files.retain(|p| !p.starts_with(&content));
         let docs = files.iter()
             .filter(|p| p.extension().is_some_and(|e| e == "md"))
             .filter(|p| !p.file_name().unwrap().to_string_lossy().starts_with('_'))

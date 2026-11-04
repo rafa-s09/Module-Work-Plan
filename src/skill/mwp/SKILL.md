@@ -20,6 +20,7 @@ description: Work in a project documented with MWP (Module Work Plan). Use when 
 | `mwp/decisions/` | ADRs: why a choice was made |
 | `mwp/map.md` | Generated index of modules, one line each |
 | `mwp/PROJECT.md`, `mwp/glossary.md` | Overview, commands, domain terms |
+| `mwp/content/` | Optional. Resources for the project: icons, images, design files, documents |
 | `.mwp/ledger.json` | Last reserved ID per prefix; written by the CLI, never by hand |
 
 Files starting with `_` are templates: copy them, never treat them as real tasks, modules, SPECs or ADRs. `mwp/modules/README.md` explains the folder and is not a module.
@@ -77,6 +78,21 @@ To see what is pending: `mwp task-list` (or `mwp task list`): open tasks, `--sta
 - Replacing a decision: `mwp adr new "<title>" --supersedes ADR-0002`. The old ADR is set to `superseded` with `superseded_by:`. Both changes belong to the same task.
 - Only a person sets `accepted`. Never edit the body of an accepted ADR; factual fixes go in `## Amendments`.
 - `mwp adr list [--status accepted]` shows the decisions in force.
+
+## Using resources (`mwp/content/`)
+
+`mwp/content/` is the default place for resources: icons, images, Figma files or exports, PDFs, reference documents, sample data. The folder is optional; the CLI ignores it.
+
+- **Need a resource?** Look in `mwp/content/` first. List the folder to find it; never open everything.
+- **Open only what the task needs.** Binary files (images, `.fig`, PDFs) are referenced by path; open one only if you must inspect it.
+- **Tasks cite resources by path** (`mwp/content/icons/cart.svg`) in Scope or in a criterion. Resources have no ID.
+- **The app needs it at build or run time?** Copy it into the code's asset folder; `content/` keeps the reference copy.
+- **New resource from the task?** Save it in `mwp/content/`, in a subfolder by type (`icons/`, `images/`, `design/`, `docs/`), and list it in the closure.
+- **Not there?** Ask. Never invent or download a replacement.
+
+## Documenting modules
+
+To create modules for code that has none, or to check existing modules against the code and the ADRs, use the `module` skill.
 
 ## Rules that are easy to break
 

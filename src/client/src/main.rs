@@ -23,14 +23,16 @@ const TEMPLATES: &[(&str, &str)] = &[
     ("mwp/tasks/done/.gitkeep", ""),
     ("mwp/specs/_template.md", include_str!("../../../templates/mwp/specs/_template.md")),
     ("mwp/decisions/_template.md", include_str!("../../../templates/mwp/decisions/_template.md")),
-    (".claude/skills/mwp/SKILL.md", include_str!("../../skill/SKILL.md")),
+    ("mwp/content/.gitkeep", ""),
+    (".claude/skills/mwp/SKILL.md", include_str!("../../skill/mwp/SKILL.md")),
+    (".claude/skills/module/SKILL.md", include_str!("../../skill/module/SKILL.md")),
 ];
 
 const USAGE: &str = "mwp — Module Work Plan
 
 Usage: mwp <command> [options]
 
-  init [dir] [--name <name>] [--no-skill]   Create mwp/, AGENTS.md, CLAUDE.md and the skill; never overwrites
+  init [dir] [--name <name>] [--no-skill]   Create mwp/, AGENTS.md, CLAUDE.md and the skills; never overwrites
   lint [--strict]                           Check the project; --strict also fails on warnings
   map [--write | --check]                   Print the module map; --write updates map.md, --check fails if stale
   remap [--dry-run]                         Recheck modules (paths, dependencies, tests) and update map.md

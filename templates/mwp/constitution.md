@@ -7,8 +7,9 @@
 2. Read only the modules in the task's `modules:` and `reads:`, the SPECs in `specs:` and the ADRs in `decisions:`.
 3. Read a module's durable SPECs or ADRs, `PROJECT.md` or `glossary.md` only if the task touches what they cover or a domain question arises.
 4. Use `map.md` only to find a module not listed in the task.
-5. Never read the whole `modules/` folder, `tasks/done/` (except tasks in `refs:`), SPECs that are `incorporated` or `archived`, or ADRs that are `rejected`, `superseded` or `deprecated`, unless the task cites them.
-6. If you need a module outside the manifest, record it in the closure.
+5. Resources (icons, images, design files, documents) live in `content/`. Open a resource only when the task cites it or needs it; list the folder to find one, never load it all.
+6. Never read the whole `modules/` folder, `tasks/done/` (except tasks in `refs:`), SPECs that are `incorporated` or `archived`, or ADRs that are `rejected`, `superseded` or `deprecated`, unless the task cites them.
+7. If you need a module outside the manifest, record it in the closure.
 
 ## 2. Allowed / must use
 - Approved languages and libraries: <...>

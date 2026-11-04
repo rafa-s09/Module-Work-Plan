@@ -6,23 +6,35 @@ This guide covers the day-to-day use of MWP: installing the `mwp` CLI, setting u
 - [2. Set up a project](#2-set-up-a-project)
 - [3. Concepts in one page](#3-concepts-in-one-page)
 - [4. The workflow](#4-the-workflow)
-- [5. The agent skill](#5-the-agent-skill)
+- [5. The agent skills](#5-the-agent-skills)
 - [6. CLI reference](#6-cli-reference)
 - [7. Continuous integration](#7-continuous-integration)
 - [8. Troubleshooting](#8-troubleshooting)
 
 ## 1. Install
 
-The CLI is written in Rust (1.85+) and has no dependencies. From a checkout of this repository:
+The CLI is written in Rust (1.85+) and has no dependencies. Install [Rust](https://rustup.rs), then run the installer from a checkout of this repository:
+
+**Linux/macOS**
+```bash
+./src/install.sh
+```
+
+**Windows (Powershell)**
+```powershell
+.\src\install.ps1
+```
+If PowerShell blocks scripts: `powershell -ExecutionPolicy Bypass -File .\src\install.ps1`.
+
+Pass a project folder to also run `mwp init` there (`./src/install.sh ../store`). Both scripts run `cargo install --path src/client --locked --force` and say if the install folder is missing from your `PATH`. Check with:
 
 ```bash
-cargo install --path src/client
 mwp --version
 ```
 
-The templates and the skill are embedded in the binary at build time, so reinstall after changing `templates/` or `src/skill/`.
+The templates and the skills are embedded in the binary at build time, so run the installer again after changing `templates/` or `src/skill/`.
 
-The CLI is optional. Every command has a manual equivalent, listed in the [skill](../../src/skill/SKILL.md#cli-reference).
+The CLI is optional. Every command has a manual equivalent, listed in the [mwp skill](../../src/skill/mwp/SKILL.md#cli-reference).
 
 ## 2. Set up a project
 
@@ -36,7 +48,8 @@ mwp init --name "Store"
 ```
 AGENTS.md                       # pointer to the constitution, for any agent
 CLAUDE.md                       # same pointer, for Claude Code
-.claude/skills/mwp/SKILL.md     # the agent skill (omit with --no-skill)
+.claude/skills/mwp/SKILL.md     # workflow skill (both skills omitted with --no-skill)
+.claude/skills/module/SKILL.md  # module skill
 mwp/
 ├── PROJECT.md
 ├── constitution.md
@@ -46,7 +59,8 @@ mwp/
 ├── tasks/open/.gitkeep, _template-task.md, _template-task-s.md
 ├── tasks/done/.gitkeep
 ├── specs/_template.md
-└── decisions/_template.md
+├── decisions/_template.md
+└── content/.gitkeep
 ```
 
 Then:
@@ -60,7 +74,7 @@ Then:
    !.mwp/ledger.json
    ```
 
-4. **Document the first module**: the one you will change first, not the whole system (see [4.1](#41-document-a-module)).
+4. **Document the first module**: the one you will change first, not the whole system (see [4.1](#41-document-a-module)). For an existing codebase, the `module` skill can propose and write the modules for you.
 
 ## 3. Concepts in one page
 
@@ -71,6 +85,7 @@ Then:
 | SPEC | A specification too big for a module (durable) or a task's plan (transient) | Transient ones are incorporated or archived at closure |
 | ADR | **Why** a choice was made | Never edited once accepted; replaced by a new ADR |
 | Constitution | The agent's rules | Rarely |
+| Content | Optional resources in `mwp/content/`: icons, images, design files, documents | When resources are added |
 
 **IDs**
 
@@ -91,7 +106,13 @@ Project IDs are global, sequential, have at least 4 digits and are never reused.
 
 ### 4.1 Document a module
 
-Copy `mwp/modules/_template.md` to `mwp/modules/order.md` (subfolders such as `domain/order.md` are fine) and fill the front matter:
+For code that already exists, ask the agent:
+
+> Use the module skill to create the modules for this project.
+
+It surveys the code, **stops to show the proposed modules** (ID, type, code and test folders, dependencies), and only writes them after you approve. It ends with a report: what it created, rules without tests, suspected bugs, and anything that needs your decision. It never changes code or tests.
+
+To write one by hand, copy `mwp/modules/_template.md` to `mwp/modules/order.md` (subfolders such as `domain/order.md` are fine) and fill the front matter:
 
 ```yaml
 ---
@@ -183,7 +204,32 @@ create mwp/decisions/ADR-0002-store-money-as-decimal.md (status: proposed)
 update mwp/decisions/ADR-0001-store-money-in-cents.md (status: superseded, superseded_by: ADR-0002)
 ```
 
-### 4.5 See where things stand
+### 4.5 Keep modules in sync
+
+Modules drift when code changes outside the workflow. Every so often, or before a large task, ask:
+
+> Use the module skill to audit the modules.
+
+For each module the agent compares rules, tests, contracts and dependencies with the code, and checks the code against the accepted ADRs. It fixes factual drift (paths, dependencies, signatures, unregistered tests) and **asks** about the rest: a rule that differs from the code, behavior with no rule, code that violates an ADR. You can limit it: *"audit the order and payment modules"*.
+
+### 4.6 Use resources
+
+Put resources the agent may need in `mwp/content/`: icons, images, Figma files or exports, PDFs, reference documents, sample data. Subfolders by type keep it easy to browse:
+
+```
+mwp/content/
+├── icons/
+├── images/
+├── design/      # .fig files, exports, links to Figma
+└── docs/        # PDFs, client specs, reference material
+```
+
+- Cite a resource in the task by path: *"Use `mwp/content/icons/cart.svg` on the checkout button."*
+- The agent looks in `content/` first, opens only what the task needs, and copies a resource into the code's asset folder when the app uses it. `content/` keeps the reference copy.
+- If a resource is missing, the agent asks instead of inventing one.
+- The folder is optional, and the CLI ignores it: `lint`, `map` and `next` never read it.
+
+### 4.7 See where things stand
 
 ```
 $ mwp task-list
@@ -194,19 +240,35 @@ $ mwp adr list --status accepted
 ADR-0001  accepted    2026-11-03 Store money in cents
 ```
 
-## 5. The agent skill
+## 5. The agent skills
 
-`mwp init` installs the skill at `.claude/skills/mwp/SKILL.md`. Its source is [`src/skill/SKILL.md`](../../src/skill/SKILL.md). It teaches the agent:
+`mwp init` installs two skills in `.claude/skills/` (skip them with `--no-skill`).
+
+### `mwp`: the workflow
+
+Source: [`src/skill/mwp/SKILL.md`](../../src/skill/mwp/SKILL.md). It teaches the agent:
 
 - which files exist and which to ignore (templates, done tasks, superseded ADRs);
 - the ID rules, including searching with a word boundary (`\bT-0043\b`, because `TEST-0043` contains `T-0043`);
 - the steps to execute, create and close a task, and the CLI command for each step;
+- how to find and use resources in `mwp/content/`;
 - when to stop and ask;
 - the manual equivalent of every command, for projects without the CLI.
 
+### `module`: modules from the code
+
+Source: [`src/skill/module/SKILL.md`](../../src/skill/module/SKILL.md). Two modes:
+
+| Mode | Ask | What it does |
+|---|---|---|
+| Create | *"Create the modules for this project"* | Surveys the code, proposes boundaries and stops for approval, writes the modules, runs `remap` and `lint` |
+| Audit | *"Audit the modules"* | Compares each module with its code, tests and ADRs; fixes factual drift; reports the rest |
+
+Both end with a report that cites a file and line, or a rule ID, for every finding. The skill writes only in `mwp/modules/`: it never changes code, tests or accepted ADRs. Run it inside a task (size L) so changelog rows have a task ID.
+
 The skill explains **how** to work; `mwp/constitution.md` holds the **rules**. If the two disagree, the constitution wins. Do not copy rules into the skill, `AGENTS.md` or `CLAUDE.md`: that creates two sources of truth.
 
-**Other agents.** `AGENTS.md` points any agent to the constitution, which is enough to follow the format. If your agent supports skills, copy `SKILL.md` to its skills folder.
+**Other agents.** `AGENTS.md` points any agent to the constitution, which is enough to follow the format. If your agent supports skills, copy both `SKILL.md` files to its skills folder.
 
 ## 6. CLI reference
 
@@ -219,7 +281,7 @@ Creates the structure in `dir` (default: current folder). Never overwrites.
 | Option | Effect |
 |---|---|
 | `--name <name>` | Fills the project name in `PROJECT.md` |
-| `--no-skill` | Does not install `.claude/skills/mwp/SKILL.md` |
+| `--no-skill` | Does not install the skills in `.claude/skills/` |
 
 ### `mwp task new <title>`
 

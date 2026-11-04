@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/icone/icone-escuro.svg">
-    <img src="assets/icone/icone.svg" alt="Module Work Plan icon" width="140">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/icone/icon-dark.svg">
+    <img src="assets/icone/icon.svg" alt="Module Work Plan icon" width="140">
   </picture>
 </p>
 
@@ -41,19 +41,28 @@ mwp/
 ├── tasks/open/       # T-0043-order-discount.md
 ├── tasks/done/       # finished tasks, never edited
 ├── specs/            # SP-0003: specs too big for a module
-└── decisions/        # ADR-0002: why a choice was made
+├── decisions/        # ADR-0002: why a choice was made
+└── content/          # optional: icons, images, design files, documents
 ```
 
 ## Quick start
 
+Install the CLI from a checkout of this repository (requires [Rust](https://rustup.rs)) and set up your project in one step:
+
+**Linux/macOS**
 ```bash
-cargo install --path src/client     # from a checkout of this repository
-cd your-project
-mwp init --name "Your project"      # creates mwp/, AGENTS.md, CLAUDE.md and the agent skill
+./src/install.sh path/to/your-project
 ```
 
+**Windows (Powershell)**
+```powershell
+.\src\install.ps1 path\to\your-project
+```
+
+Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which creates `mwp/`, `AGENTS.md`, `CLAUDE.md` and the agent skills without overwriting anything. Leave the folder out to only install the CLI.
+
 1. Fill `mwp/PROJECT.md` and replace the `<placeholders>` in `mwp/constitution.md`.
-2. Document the module you will touch first (copy `mwp/modules/_template.md`), then run `mwp remap`.
+2. Document the module you will touch first (copy `mwp/modules/_template.md`, or ask your agent to use the `module` skill on existing code), then run `mwp remap`.
 3. Create a task: `mwp task new "Order discount" --modules order`.
 4. Ask your agent: *"Execute task T-0001"*.
 
@@ -80,12 +89,10 @@ The CLI is optional: everything it does can be done by hand following the templa
 |---|---|
 | [`templates/`](templates) | Files `mwp init` copies into a project |
 | [`src/client/`](src/client) | The `mwp` CLI (Rust, no dependencies) |
-| [`src/skill/`](src/skill) | Agent skill that teaches the workflow |
+| [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
+| [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
+| [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |
 | [`assets/docs/`](assets/docs) | Guide |
-
-## Status
-
-Format version 2, draft. Names, fields and commands may still change.
 
 ## License
 
