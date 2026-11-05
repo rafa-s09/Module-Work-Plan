@@ -83,6 +83,12 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 
 The CLI is optional: everything it does can be done by hand following the templates.
 
+## Example
+
+**[The Black Ledger](examples/pirate-ship)** is a working management system for a pirate ship, in Python, Angular and SQLite, documented from end to end in MWP, by a drunk pirate. The domain is absurd on purpose: the format shapes the structure of the work, not its tone.
+
+It has 8 modules, an ADR (all money is stored as whole reales), 7 finished tasks with their evidence, and 5 open tasks that test an agent: some contradict a decision or a registered test, and the agent has to stop and ask.
+
 ## Repository
 
 | Path | Contents |
@@ -93,6 +99,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |
 | [`assets/docs/`](assets/docs) | Guide and philosophy |
+| [`examples/pirate-ship/`](examples/pirate-ship) | A complete project built with MWP, with exercises for agents |
 
 ## License
 

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Pirate ship">
+  <g stroke="#2b2118" stroke-width="2.5" stroke-linejoin="round">
+    <path d="M50 8V74M28 20V74M72 20V74" fill="none"/>
+    <path d="M50 8 64 13 50 18Z" fill="#2b2118"/>
+    <path d="M36 22Q52 32 36 46H64Q48 32 64 22Z" fill="#f2e6c9"/>
+    <path d="M16 28Q30 38 16 52H38Q28 38 38 28Z" fill="#f2e6c9"/>
+    <path d="M62 28Q74 38 62 52H84Q74 38 84 28Z" fill="#f2e6c9"/>
+    <path d="M6 66H94L84 88Q50 94 16 88Z" fill="#5a3a22"/>
+    <path d="M12 74H88" fill="none"/>
+    <circle cx="30" cy="80" r="2.5" fill="#2b2118"/>
+    <circle cx="50" cy="81" r="2.5" fill="#2b2118"/>
+    <circle cx="70" cy="80" r="2.5" fill="#2b2118"/>
+  </g>
+</svg>

@@ -11,7 +11,7 @@ language: en
 Arrr, the book that runs a pirate ship. The captain and the quartermaster use it to keep the crew roster, take the ship from port to plunder and back, mind what lies in the hold, and split every last doubloon by the articles, so no scallywag can cry he was cheated.
 
 ## Stack
-- Back: Python 3.12, FastAPI, the standard `sqlite3` module.
+- Back: Python 3.12+, FastAPI, the standard `sqlite3` module.
 - Front: Angular (standalone components), TypeScript.
 - Database: SQLite, one file.
 - Tests: pytest (back) — `cd backend && pytest`; Angular test runner (front) — `cd frontend && npm test`.

@@ -18,7 +18,7 @@
 7. If you need a module outside the manifest, record it in the closure.
 
 ## 2. Allowed / must use
-- Back: Python 3.12, FastAPI, Pydantic (comes with FastAPI), the standard `sqlite3` module, `hashlib.scrypt` and `secrets` for passwords and tokens.
+- Back: Python 3.12+, FastAPI, Pydantic (comes with FastAPI), the standard `sqlite3` module, `hashlib.scrypt` and `secrets` for passwords and tokens.
 - Front: Angular (standalone components, signals), TypeScript strict mode, the Angular `HttpClient`. No UI component library; the theme is our own (see `deck`).
 - Database: SQLite through `sqlite3`. No ORM.
 - Test frameworks: pytest — `cd backend && pytest`; Angular test runner — `cd frontend && npm test`.

@@ -1,0 +1,14 @@
+/* The chart's colors and type (deck: "Theme: charts and ships"). Components use these, never raw colors. */
+:root {
+  --parchment: #f2e6c9;
+  --parchment-deep: #e4d3a8;
+  --ink: #2b2118;
+  --sea: #1f4e5f;
+  --sea-shallow: #6e9ca8;
+  --brass: #b08d3c;
+  --seal: #9e2b25;
+  --kelp: #3f6b3a;
+
+  --font-display: 'IM Fell English', Georgia, 'Times New Roman', serif;
+  --font-body: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+}
