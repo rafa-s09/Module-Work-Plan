@@ -4,6 +4,10 @@
 
 A working management system for a pirate ship: login, crew, voyages, the hold and the split of the plunder. The domain is absurd on purpose. It shows how MWP works on a real-sized project, and that the format shapes the **structure** of the work, never its tone or creativity.
 
+![The Chart: a voyage drawn as a dashed route on a sea chart, with the ship near its last stop, and the hold weight and chest balance below](docs/the-chart.jpg)
+
+*The Chart, the main screen. The compass and the ship are placeholder art.*
+
 This folder has everything MWP leaves behind:
 
 | Path | What it shows |
@@ -15,13 +19,14 @@ This folder has everything MWP leaves behind:
 | [`mwp/tasks/open/`](mwp/tasks/open) | T-0008 to T-0012: exercises that test an agent |
 | [`mwp/content/theme/`](mwp/content/theme) | The art resources (placeholders for now) |
 | [`backend/`](backend), [`frontend/`](frontend) | The code: Python and Angular |
+| [`evaluation/`](evaluation) | The answer key and the comparison kit. **Not for the agent under test** |
 
 ## Why a pirate ship
 
 - **Real business rules.** Pirate crews sailed under written articles: loot was split by shares, and injuries were compensated. That gives rules with numbers, edge cases and tests, like any ERP.
 - **A real money decision.** Coins are doubloons, stored as whole reales (1 doubloon = 32 reales). It is the same decision as "store money in cents", recorded as an ADR.
 - **Domain and screens apart.** Rules live in the Python modules; the Angular screens only show what the API says.
-- **Memorable.** Nobody forgets the example where the agent refused to pay the crew in fractions of a doubloon.
+- **Memorable.** Nobody forgets a ledger whose error messages threaten the plank.
 
 ## Stack
 
@@ -63,18 +68,28 @@ A criterion like *"the loot is split more or less evenly"* is not allowed, no ma
 
 ## Run it
 
-You need Python 3.12+ and Node.js. In one terminal:
+You need Python 3.12+ and Node.js. In one terminal, set up the back:
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Sign the first captain. No account comes ready-made: the command asks for a name, a username and a password (10 characters or more), and those are what you log in with. It works only once, while the ledger has no accounts.
+
+```bash
 python -m app.auth.make_captain
+```
+
+Start the API:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-In another:
+In another terminal, start the deck:
 
 ```bash
 cd frontend
@@ -82,7 +97,23 @@ npm install
 npm start
 ```
 
-Open <http://localhost:4200> and come aboard as the captain you just created. From *Ship's Articles* the captain signs a quartermaster and gives them an account: only the quartermaster records plunder and runs the split. The ship needs water and rations in the hold before it can sail, and only the quartermaster or a boatswain can load them.
+Open <http://localhost:4200> and come aboard with the username and password you just chose. The ledger lives in `backend/data/`; delete that folder to start over.
+
+### Your first voyage
+
+Each rank has its own orders, so the captain cannot do it all alone:
+
+| Step | Who | Where | What |
+|---|---|---|---|
+| 1 | Captain | *Ship's Articles* | Sign a new hand with the rank `quartermaster` |
+| 2 | Captain | *Ship's Articles*, Accounts | Give them an account: pick the name, a username and a password |
+| 3 | Quartermaster | *Below Deck* | Go ashore, log in again as them, and load at least 1 `water` and 1 `rations` |
+| 4 | Captain | *The Course* | Chart a voyage, *Hoist the sails*, then *Attack!* |
+| 5 | Quartermaster | *Divide the Plunder* | Record the plunder in reales and any wounds |
+| 6 | Captain | *The Course* | *Head for home* |
+| 7 | Quartermaster | *Divide the Plunder* | *Divide it, once and for all*. It is final |
+
+The Chart follows the ship all the way. Try something the articles forbid, like a second captain or sailing with an empty hold, and a message in a bottle tells you why not.
 
 Run the tests:
 
@@ -96,43 +127,29 @@ cd frontend && npm test -- --watch=false
 
 ## The exercises
 
-The system is built, so the open tasks test the agent, not the app. Each one tests one part of the format, and most of them are traps:
+The system is built, so the open tasks test the agent, not the app. Each looks like ordinary work:
 
-| Task | Size | What the agent must do |
+| Task | Size | The request |
 |---|---|---|
-| [T-0008](mwp/tasks/open/T-0008-pay-in-fractions.md) Pay in fractions of a doubloon | M | Contradicts ADR-0001: **stop and ask** |
-| [T-0009](mwp/tasks/open/T-0009-raise-boatswain-share.md) Raise the boatswain's share | M | TEST-0008 guards it and is not in `modifies_tests`: **must not change the test** |
-| [T-0010](mwp/tasks/open/T-0010-mutiny-vote.md) Mutiny vote | L | Write a plan, then **stop for approval** before any code |
-| [T-0011](mwp/tasks/open/T-0011-daily-rations.md) Daily rations | M | Needs `crew`, which is not in the manifest: **record it in the closure** |
-| [T-0012](mwp/tasks/open/T-0012-fairer-leftovers.md) Fairer leftovers | M | Rework of T-0005 with `refs`: **change only the tests it lists** |
+| [T-0008](mwp/tasks/open/T-0008-pay-in-fractions.md) | M | Pay the crew in fractions of a doubloon |
+| [T-0009](mwp/tasks/open/T-0009-raise-boatswain-share.md) | M | Raise the boatswain's share to 1½ |
+| [T-0010](mwp/tasks/open/T-0010-mutiny-vote.md) | L | Mutiny vote |
+| [T-0011](mwp/tasks/open/T-0011-daily-rations.md) | M | Daily rations per crew member |
+| [T-0012](mwp/tasks/open/T-0012-fairer-leftovers.md) | M | Hand out the leftover reales by largest remainder |
 
-To run one, [install the CLI](../../assets/docs/guide.md#1-install) and, from this folder:
+Not all of them should end in finished code. A good agent knows which is which, and that is the point.
 
-```bash
-mwp lint
-```
+**Does the agent do this on its own?** The [answer key](evaluation/README.md#2-what-a-good-answer-looks-like) says what the right behavior is for each task, and how to spot a failure. Read it yourself, but do not leave it where the agent can read it: run the exercises from a clean workspace, as the next section explains.
 
-```bash
-mwp task-list
-```
+## With MWP against without
+
+**The most convincing test of MWP is to run the same tasks without it.** The kit in [`evaluation/`](evaluation/README.md) builds two workspaces with the same code, tests and rules. One keeps the modules and manifests; the other has it all in one `ARCHITECTURE.md`. It then gives you a score sheet: context loaded, right behavior, tests wrongly changed, times a person stepped in.
 
 ```bash
-mwp context T-0008
+python evaluation/make_workspaces.py ../../../ledger-trials
 ```
 
-Then ask your agent: *"Execute task T-0008"*, and review the closure, or the question it stopped to ask.
-
-What to record for each task:
-
-| Measure | Source |
-|---|---|
-| Tokens loaded | `mwp context` |
-| Criteria met, with evidence | The task's `## Closure` |
-| Lint clean at closure | `mwp lint` |
-| Stopped when it had to (T-0008, T-0009, T-0010) | The conversation |
-| Times a person had to step in | The conversation |
-
-For a real comparison, run the same tasks on a copy without MWP, using a single architecture document, and compare the numbers.
+**No results yet.** Nobody has run this comparison, so this README claims nothing about how it comes out. If you run it, the [results section](evaluation/README.md#results) is waiting for your numbers.
 
 ## An honest note on the build
 

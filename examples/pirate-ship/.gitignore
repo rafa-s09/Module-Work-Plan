@@ -1,0 +1,13 @@
+# The ledger itself: every run makes its own
+backend/data/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
