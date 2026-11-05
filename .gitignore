@@ -30,6 +30,22 @@ CLAUDE.local.md
 target/
 
 # ─────────────────────────────────────────────
+# Exemplos: Python e banco local (examples/pirate-ship/backend)
+# ─────────────────────────────────────────────
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+examples/*/backend/data/
+
+# ─────────────────────────────────────────────
+# Exemplos: Angular (examples/pirate-ship/frontend)
+# ─────────────────────────────────────────────
+node_modules/
+examples/*/frontend/dist/
+examples/*/frontend/.angular/
+
+# ─────────────────────────────────────────────
 # Logs e temporários
 # ─────────────────────────────────────────────
 *.log
