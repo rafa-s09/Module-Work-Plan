@@ -14,10 +14,13 @@
   <img src="https://img.shields.io/badge/rust-1.85%2B-E4572E" alt="Rust 1.85+">
 </p>
 
+<p align="center"><strong>English</strong> · <a href="README.pt-BR.md">Português (Brasil)</a></p>
+
 ---
 
 **Module Work Plan (MWP)** is a documentation format for building software with AI agents. Instead of handing the agent a pile of documents for every small change, MWP describes the system **by module** (how it is today) and records each change in a small, immutable **task** that states exactly which modules the agent needs to read.
 
+MWP is made for systems with a long life, real business rules and work that can be delegated. It is not worth it for a prototype or a throwaway script.
 
 ## How it works
 
@@ -30,6 +33,8 @@
 **Born in the task, lives in the module.** Anything still true after a task closes is written into the module before the task is done.
 
 To execute a task, the agent reads the **constitution**, the **task** and the **modules the task lists**, usually 1 to 3. Every acceptance criterion says how it is verified (`[auto: TEST-0007]`, `[manual]`, `[regression]`, `[doc]`), and the task closes only with evidence for each one.
+
+When sources disagree, the priority is **constitution > accepted ADRs > module > task**. If a task contradicts a rule, the agent stops and asks instead of resolving it silently.
 
 ```
 mwp/
@@ -54,7 +59,7 @@ Install the CLI from a checkout of this repository (requires [Rust](https://rust
 ./src/install.sh path/to/your-project
 ```
 
-**Windows (Powershell)**
+**Windows (PowerShell)**
 ```powershell
 .\src\install.ps1 path\to\your-project
 ```
@@ -62,9 +67,10 @@ Install the CLI from a checkout of this repository (requires [Rust](https://rust
 Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which creates `mwp/`, `AGENTS.md`, `CLAUDE.md` and the agent skills without overwriting anything. Leave the folder out to only install the CLI.
 
 1. Fill `mwp/PROJECT.md` and replace the `<placeholders>` in `mwp/constitution.md`.
-2. Document the module you will touch first (copy `mwp/modules/_template.md`, or ask your agent to use the `module` skill on existing code), then run `mwp remap`.
-3. Create a task: `mwp task new "Order discount" --modules order`.
-4. Ask your agent: *"Execute task T-0001"*.
+2. Add `.mwp/*` and `!.mwp/ledger.json` to `.gitignore`: the ledger is versioned, the rest of `.mwp/` is local.
+3. Document the module you will touch first (copy `mwp/modules/_template.md`, or ask your agent to use the `module` skill on existing code), then run `mwp remap`.
+4. Create a task: `mwp task new "Order discount" --modules order`.
+5. Ask your agent: *"Execute task T-0001"*.
 
 See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and every CLI option, and **[the philosophy](assets/docs/philosophy.md)** for who does what, and why.
 
@@ -89,6 +95,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 
 It has 8 modules, an ADR (all money is stored as whole reales), 7 finished tasks with their evidence, and 5 open tasks that test an agent: some contradict a decision or a registered test, and the agent has to stop and ask.
 
+
 ## Repository
 
 | Path | Contents |
@@ -98,7 +105,7 @@ It has 8 modules, an ADR (all money is stored as whole reales), 7 finished tasks
 | [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |
-| [`assets/docs/`](assets/docs) | Guide and philosophy |
+| [`assets/docs/`](assets/docs) | Guide and philosophy, in English and Brazilian Portuguese |
 | [`examples/pirate-ship/`](examples/pirate-ship) | A complete project built with MWP, with exercises for agents |
 
 ## License

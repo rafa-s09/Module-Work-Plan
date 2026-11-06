@@ -1,5 +1,7 @@
 # The MWP philosophy
 
+**English** · [Português (Brasil)](philosophy.pt-BR.md)
+
 MWP is not a safety net that prevents mistakes. It is a **production line**: a way of working that keeps a system healthy over a long life, with humans and agents each doing the part they do best.
 
 Humans make mistakes. Agents make mistakes. That will not change. What MWP changes is where a mistake can come from, how fast it shows up, and how cheaply it is fixed.
