@@ -91,9 +91,17 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 
 O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templates.
 
-## Quadro (GUI)
+## Editor (GUI)
 
-O `mwp-gui` é uma janela opcional para a pessoa que acompanha o trabalho. Mostra as tasks por status, qual agente está em cada task em andamento, os módulos bloqueados e o resultado do lint, e acompanha o projeto conforme os agentes o alteram. É somente leitura.
+O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o trabalho:
+
+- **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos, tasks abertas e concluídas, SPECs, ADRs), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
+- **Editor** para qualquer um desses arquivos, com Ctrl+S para salvar e um aviso antes de perder alterações não salvas.
+- **Quadro** das tasks por status; um cartão abre a task.
+- **Problemas** do `mwp lint`; uma linha abre o arquivo.
+- **File > New project** cria um projeto (pasta, nome, agentes, skills), como o `mwp init`.
+
+Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram.
 
 ```bash
 cargo install --path src/gui --locked
@@ -107,7 +115,7 @@ Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`.
 |---|---|
 | [`templates/`](templates) | Arquivos que o `mwp init` copia para um projeto |
 | [`src/client/`](src/client) | O CLI `mwp` e sua biblioteca core (Rust, sem dependências, não precisa do git) |
-| [`src/gui/`](src/gui) | O `mwp-gui`, o quadro opcional (Rust, egui), feito sobre a biblioteca core |
+| [`src/gui/`](src/gui) | O `mwp-gui`, o editor opcional (Rust, egui), feito sobre a biblioteca core |
 | [`src/skill/mwp/`](src/skill/mwp) | Skill do agente: o fluxo de trabalho, o CLI e os recursos em `content/` |
 | [`src/skill/module/`](src/skill/module) | Skill do agente: cria módulos a partir do código existente ou os audita contra o código e os ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Instaladores para macOS/Linux e Windows |

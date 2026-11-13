@@ -91,9 +91,17 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 
 The CLI is optional: everything it does can be done by hand following the templates.
 
-## Board (GUI)
+## Editor (GUI)
 
-`mwp-gui` is an optional desktop window for the person following the work. It shows the tasks by status, which agent holds each task in progress, the locked modules and the lint result, and follows the project as agents change it. It is read-only.
+`mwp-gui` is an optional desktop editor for the person following the work:
+
+- **Explorer** of the `mwp/` files by section (project, modules, open and done tasks, SPECs, ADRs), with broken files in red, and the agents at work with the modules they lock.
+- **Editor** for any of those files, with Ctrl+S to save and a prompt before unsaved changes are lost.
+- **Board** of the tasks by status; a card opens the task.
+- **Problems** from `mwp lint`; a line opens the file.
+- **File > New project** creates a project (folder, name, agents, skills), like `mwp init`.
+
+It rereads the project every 2 seconds, so it follows what agents change.
 
 ```bash
 cargo install --path src/gui --locked
@@ -107,7 +115,7 @@ Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`.
 |---|---|
 | [`templates/`](templates) | Files `mwp init` copies into a project |
 | [`src/client/`](src/client) | The `mwp` CLI and its core library (Rust, no dependencies, no git needed) |
-| [`src/gui/`](src/gui) | `mwp-gui`, the optional board (Rust, egui), built on the core library |
+| [`src/gui/`](src/gui) | `mwp-gui`, the optional editor (Rust, egui), built on the core library |
 | [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |
