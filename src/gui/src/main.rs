@@ -193,8 +193,7 @@ impl App {
     }
 
     fn new_project_dialog(&self) -> Dialog {
-        let name = self.root.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
-        Dialog::New { dir: self.root.display().to_string(), name, agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
+        Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
     }
 
     /// The New / Open project dialogs; returns the project to switch to.
@@ -204,52 +203,81 @@ impl App {
         match self.dialog.as_mut()? {
             Dialog::New { dir, name, agents, skills, error } => {
                 egui::Modal::new(egui::Id::unique("new-project")).show(ctx, |ui| {
-                    ui.set_width(460.0);
+                    ui.set_width(540.0);
                     ui.heading("New MWP project");
-                    ui.label("Creates mwp/ and the files of each agent. Existing files are never overwritten.");
-                    ui.add_space(8.0);
-                    egui::Grid::new("new-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.weak("Creates mwp/ and the files of each agent you choose. Existing files are never overwritten.");
+                    ui.add_space(12.0);
+
+                    section(ui, "Location", |ui| {
                         ui.label("Folder");
-                        ui.add(egui::TextEdit::singleline(dir).desired_width(320.0));
-                        ui.end_row();
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(name).desired_width(320.0));
-                        ui.end_row();
-                        ui.label("Agents");
-                        ui.vertical(|ui| {
-                            for (on, a) in agents.iter_mut().zip(AGENTS.iter()) {
-                                ui.checkbox(on, format!("{}  ({})", a.name, a.pointer));
+                        right_row(ui, |ui| {
+                            if ui.button("Browse…").clicked() {
+                                let start = Path::new(dir.trim());
+                                let dialog = rfd::FileDialog::new().set_title("Project folder");
+                                let dialog = if start.is_dir() { dialog.set_directory(start) } else { dialog };
+                                if let Some(picked) = dialog.pick_folder() {
+                                    // Follow the folder name unless the user typed a name of their own.
+                                    if name.trim().is_empty() || *name == folder_name(Path::new(dir.trim())) {
+                                        *name = folder_name(&picked);
+                                    }
+                                    *dir = picked.display().to_string();
+                                }
                             }
-                            ui.weak("None checked: Claude Code.");
+                            ui.add(egui::TextEdit::singleline(dir).hint_text("Folder where mwp/ will be created").desired_width(f32::INFINITY));
                         });
-                        ui.end_row();
-                        ui.label("Skills");
-                        ui.checkbox(skills, "Install the mwp and module skills");
-                        ui.end_row();
+                        let folder = Path::new(dir.trim());
+                        match () {
+                            _ if dir.trim().is_empty() => ui.weak("Choose where the project lives."),
+                            _ if folder.join("mwp").is_dir() => ui.colored_label(ui.visuals().warn_fg_color, "This folder already has an MWP project: only missing files will be added."),
+                            _ if folder.is_dir() => ui.weak("mwp/ will be created in this folder."),
+                            _ => ui.weak("The folder will be created."),
+                        };
+                        ui.add_space(6.0);
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(name).hint_text("Project name").desired_width(f32::INFINITY));
+                        ui.weak("Written to mwp/PROJECT.md.");
                     });
+
+                    section(ui, "Agents", |ui| {
+                        ui.weak("Each agent gets its instruction file and its skills folder.");
+                        ui.add_space(4.0);
+                        egui::Grid::new("agents-grid").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
+                            for (on, a) in agents.iter_mut().zip(AGENTS.iter()) {
+                                ui.checkbox(on, a.name);
+                                ui.weak(format!("{}  ·  {}", a.pointer, a.skills));
+                                ui.end_row();
+                            }
+                        });
+                        if !agents.iter().any(|on| *on) {
+                            ui.weak("None checked: Claude Code is used.");
+                        }
+                    });
+
+                    section(ui, "Options", |ui| {
+                        ui.checkbox(skills, "Install the agent skills (mwp, module)");
+                    });
+
                     if !error.is_empty() {
                         ui.colored_label(ui.visuals().error_fg_color, error.as_str());
                     }
                     ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button("Create").clicked() {
+                    right_row(ui, |ui| {
+                        let create = egui::Button::new(egui::RichText::new("Create").strong()).fill(ui.visuals().selection.bg_fill).min_size(egui::vec2(96.0, 0.0));
+                        if ui.add_enabled(!dir.trim().is_empty(), create).clicked() {
                             let folder = PathBuf::from(dir.trim());
                             let mut chosen: Vec<_> = AGENTS.iter().zip(agents.iter()).filter(|(_, on)| **on).map(|(a, _)| a).collect();
                             if chosen.is_empty() {
                                 chosen.push(&AGENTS[0]);
                             }
-                            let name = Some(name.trim()).filter(|n| !n.is_empty());
-                            match () {
-                                _ if dir.trim().is_empty() => *error = "Choose a folder.".into(),
-                                _ => match scaffold::init(&folder, name, &chosen, *skills) {
-                                    Ok(_) => action = Some(Action::Project(folder, true)),
-                                    Err(e) => *error = e,
-                                },
+                            match scaffold::init(&folder, Some(name.trim()).filter(|n| !n.is_empty()), &chosen, *skills) {
+                                Ok(_) => action = Some(Action::Project(folder, true)),
+                                Err(e) => *error = e,
                             }
                         }
-                        close = ui.button("Cancel").clicked();
+                        close = ui.add(egui::Button::new("Cancel").min_size(egui::vec2(96.0, 0.0))).clicked();
                     });
                 });
+                close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
             }
             Dialog::Open { dir, error } => {
                 egui::Modal::new(egui::Id::unique("open-project")).show(ctx, |ui| {
@@ -279,6 +307,27 @@ impl App {
         }
         action
     }
+}
+
+fn folder_name(path: &Path) -> String {
+    path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// One row laid out from the right. Its height is fixed: a right-to-left layout would
+/// otherwise take all the height it is offered, and the modal would grow every frame.
+fn right_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    let size = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+    ui.allocate_ui_with_layout(size, egui::Layout::right_to_left(egui::Align::Center), add);
+}
+
+/// A titled, framed group of fields in a dialog.
+fn section(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
+    ui.label(egui::RichText::new(title).strong());
+    egui::Frame::group(ui.style()).inner_margin(10.0).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        add(ui);
+    });
+    ui.add_space(10.0);
 }
 
 /// Secondary text on one line, cut with an ellipsis when the column is narrow.
@@ -640,6 +689,10 @@ mod tests {
         } else {
             panic!("the New project dialog did not open");
         }
+        h.run_steps(3); // the dialog relays out for the new folder before the click
+        let before = h.get_by_label("Create").rect();
+        h.run_steps(3);
+        assert_eq!(h.get_by_label("Create").rect(), before, "the dialog must keep its size");
         h.get_by_label("Create").click();
         h.run_steps(3);
         assert!(h.state().dialog.is_none(), "the dialog did not create the project");
