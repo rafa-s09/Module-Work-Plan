@@ -29,6 +29,39 @@ pub struct Editor {
     pub disk: Option<String>,
     /// The disk version is shown under the conflict bar.
     show_disk: bool,
+    /// The find bar, while it is open.
+    pub find: Option<Find>,
+}
+
+/// The find bar of a tab.
+pub struct Find {
+    pub query: String,
+    case: bool,
+    /// Give the query field the focus on the next frame.
+    focus: bool,
+    /// Scroll the source to the current match on the next frame.
+    reveal: bool,
+    /// The current match, as a char range. Kept here, not as the text box's selection: egui drops
+    /// the selection of a text box without focus, and the focus stays in the query field.
+    pub current: Option<(usize, usize)>,
+}
+
+/// Every match of `query` in `text`, as char ranges (the text box counts in chars).
+pub fn matches(text: &str, query: &str, case: bool) -> Vec<(usize, usize)> {
+    // shortcut: case folding is per char, so a letter that folds to two chars (ß) only matches itself.
+    let fold = |c: char| if case { c } else { c.to_lowercase().next().unwrap_or(c) };
+    let (t, q): (Vec<char>, Vec<char>) = (text.chars().map(fold).collect(), query.chars().map(fold).collect());
+    let mut out = Vec::new();
+    let mut i = 0;
+    while !q.is_empty() && i + q.len() <= t.len() {
+        if t[i..i + q.len()] == q[..] {
+            out.push((i, i + q.len()));
+            i += q.len();
+        } else {
+            i += 1;
+        }
+    }
+    out
 }
 
 /// How the user settled a conflict between the tab's edits and the file on disk.
@@ -43,7 +76,29 @@ impl Editor {
     pub fn open(path: &Path) -> Result<Editor, String> {
         let raw = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = raw.replace("\r\n", "\n");
-        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default(), disk: None, show_disk: false })
+        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default(), disk: None, show_disk: false, find: None })
+    }
+
+    /// Opens the find bar (or focuses it), with the selection as the query when it is on one line.
+    pub fn open_find(&mut self) {
+        let (a, b) = sel(self);
+        let picked: String = self.text.chars().skip(a).take(b - a).collect();
+        let f = self.find.get_or_insert_with(|| Find { query: String::new(), case: false, focus: true, reveal: false, current: None });
+        if !picked.is_empty() && !picked.contains('\n') {
+            f.query = picked;
+            f.current = Some((a, b));
+        }
+        f.focus = true;
+    }
+
+    /// The next (or previous) match after the current one (or the cursor), wrapping around.
+    /// `from_start` searches from where the current match starts, so it can be found again.
+    fn find_step(&self, forward: bool, from_start: bool) -> Option<(usize, usize)> {
+        let f = self.find.as_ref()?;
+        let m = matches(&self.text, &f.query, f.case);
+        let (a, b) = f.current.unwrap_or_else(|| sel(self));
+        let after = if from_start { a } else { b };
+        if forward { m.iter().find(|r| r.0 >= after).or(m.first()).copied() } else { m.iter().rev().find(|r| r.1 <= a).or(m.last()).copied() }
     }
 
     /// The file on disk with `\n` endings, and whether it uses CRLF.
@@ -262,6 +317,13 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resol
             }
         });
     });
+    if ed.find.is_some() {
+        // Matches are shown in the source, so a search from Preview brings it back.
+        if *mode == Mode::Preview {
+            *mode = Mode::Split;
+        }
+        find_bar(ui, ed);
+    }
     ui.separator();
 
     // Status of the source: position, words, line endings.
@@ -300,6 +362,72 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resol
         ed.cursor = Some(range);
     }
     resolve
+}
+
+/// The find bar: query, match case, "n of m", previous / next, close. Enter and F3 go to the next
+/// match, Shift with them to the previous one, Esc closes. The query keeps the focus; the match is
+/// selected in the source and scrolled into view.
+fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
+    let Some(f) = ed.find.as_ref() else { return };
+    let m = matches(&ed.text, &f.query, f.case);
+    let here = f.current.and_then(|c| m.iter().position(|r| *r == c));
+    let (mut step, mut close, mut typed) = (None, false, false);
+    let field_id = egui::Id::unique(("find", &ed.path));
+    let f = ed.find.as_mut().unwrap();
+    ui.horizontal(|ui| {
+        ui.label(ICON_SEARCH.rich_text().size(18.0).color(ui.visuals().weak_text_color()));
+        let r = ui.add(egui::TextEdit::singleline(&mut f.query).id(field_id).hint_text("Find").desired_width(260.0));
+        if std::mem::take(&mut f.focus) {
+            r.request_focus();
+        }
+        let (enter, shift, esc) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.modifiers.shift, i.key_pressed(egui::Key::Escape)));
+        if r.lost_focus() && enter {
+            step = Some(!shift);
+            r.request_focus(); // stay in the field for the next Enter
+        }
+        typed = r.changed();
+        if (r.has_focus() || r.lost_focus()) && esc {
+            close = true;
+        }
+        ui.toggle_value(&mut f.case, ICON_MATCH_CASE.rich_text()).on_hover_text("Match case");
+        let count = match (m.len(), here) {
+            (0, _) if f.query.is_empty() => String::new(),
+            (0, _) => "No results".into(),
+            (n, Some(i)) => format!("{} of {n}", i + 1),
+            (n, None) => format!("{n} found"),
+        };
+        ui.label(egui::RichText::new(count).color(if m.is_empty() && !f.query.is_empty() { ui.visuals().error_fg_color } else { ui.visuals().weak_text_color() }));
+        let arrow = |icon: MaterialIcon| egui::Button::new(icon.rich_text()).frame(false);
+        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_UPWARD)).on_hover_text("Previous match (Shift+Enter, Shift+F3)").clicked() {
+            step = Some(false);
+        }
+        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_DOWNWARD)).on_hover_text("Next match (Enter, F3)").clicked() {
+            step = Some(true);
+        }
+        close |= ui.add(arrow(ICON_CLOSE)).on_hover_text("Close (Esc)").clicked();
+    });
+    if let Some(back) = ui.input(|i| i.key_pressed(egui::Key::F3).then_some(i.modifiers.shift)) {
+        step = Some(!back);
+    }
+    if close {
+        // Closing leaves the current match selected in the source, with the focus there.
+        if let Some((a, b)) = ed.find.take().and_then(|f| f.current).filter(|c| m.contains(c)) {
+            let (id, range) = (ed.id(), CCursorRange::two(CCursor::new(a), CCursor::new(b)));
+            let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+            state.cursor.set_char_range(Some(range));
+            state.store(ui.ctx(), id);
+            ed.cursor = Some(range);
+            ui.ctx().memory_mut(|mem| mem.request_focus(id));
+        }
+        return;
+    }
+    // Typing searches again from where the current match starts, so it stays while it still matches.
+    let found = if typed { ed.find_step(true, true) } else { step.and_then(|forward| ed.find_step(forward, false)) };
+    if let Some(f) = ed.find.as_mut() {
+        if typed || found.is_some() {
+            (f.current, f.reveal) = (found, found.is_some());
+        }
+    }
 }
 
 /// The warning shown while the file on disk and the tab's edits disagree, with the two ways out
@@ -361,6 +489,13 @@ fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
         if out.cursor_range.is_some() {
             ed.cursor = out.cursor_range;
         }
+        let to_galley = out.galley_pos.to_vec2();
+        if let Some(f) = ed.find.as_mut().filter(|f| f.reveal) {
+            f.reveal = false;
+            if let Some((a, _)) = f.current {
+                ui.scroll_to_rect(out.galley.pos_from_cursor(CCursor::new(a)).translate(to_galley).expand(24.0), Some(egui::Align::Center));
+            }
+        }
         // Current line and line numbers, painted in the left margin.
         let painter = ui.painter_at(out.response.rect);
         let left = out.response.rect.left();
@@ -379,6 +514,19 @@ fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
                 number += 1;
             }
             starts_line = row.ends_with_newline;
+        }
+        // Find matches: all of them lightly, the selected one stronger. The highlight goes over the
+        // text, so it is translucent.
+        if let Some(f) = &ed.find {
+            let picked = f.current.unwrap_or_default();
+            for (a, b) in matches(&ed.text, &f.query, f.case).into_iter().take(2000) {
+                let (pa, pb) = (out.galley.pos_from_cursor(CCursor::new(a)), out.galley.pos_from_cursor(CCursor::new(b)));
+                if (pa.top() - pb.top()).abs() < 1.0 {
+                    let rect = egui::Rect::from_min_max(pa.left_top(), egui::pos2(pb.left(), pa.bottom())).translate(to_galley);
+                    let alpha = if (a, b) == picked { 110 } else { 45 };
+                    painter.rect_filled(rect, 2.0, Color32::from_rgba_unmultiplied(230, 180, 40, alpha));
+                }
+            }
         }
     });
 }
@@ -415,7 +563,7 @@ mod tests {
     use super::*;
 
     fn editor(text: &str, a: usize, b: usize) -> Editor {
-        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default(), disk: None, show_disk: false }
+        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default(), disk: None, show_disk: false, find: None }
     }
 
     #[test]
@@ -468,6 +616,30 @@ mod tests {
         ed.resolve(Resolve::Disk);
         assert!(!ed.dirty() && ed.disk.is_none() && ed.text == "agent 3\n" && ed.crlf);
         let _ = fs::remove_file(&f);
+    }
+
+    #[test]
+    fn find_matches_and_wraps() {
+        let text = "Pão alpha ALPHA\nalphaalpha é";
+        assert_eq!(matches(text, "alpha", false), [(4, 9), (10, 15), (16, 21), (21, 26)]);
+        assert_eq!(matches(text, "alpha", true), [(4, 9), (16, 21), (21, 26)]);
+        assert_eq!(matches(text, "ÃO", false), [(1, 3)]);
+        assert!(matches(text, "", false).is_empty() && matches(text, "zzz", false).is_empty());
+
+        let mut ed = editor(text, 0, 0);
+        ed.open_find();
+        ed.find.as_mut().unwrap().query = "alpha".into();
+        assert_eq!(ed.find_step(true, false), Some((4, 9)));
+        ed.find.as_mut().unwrap().current = Some((4, 9));
+        assert_eq!(ed.find_step(true, false), Some((10, 15)));
+        assert_eq!(ed.find_step(true, true), Some((4, 9)), "from the start, the current match is found again");
+        assert_eq!(ed.find_step(false, false), Some((21, 26)), "back from the first wraps to the last");
+
+        // The selection on one line seeds the query and the current match.
+        let mut ed = editor(text, 4, 9);
+        ed.open_find();
+        let f = ed.find.as_ref().unwrap();
+        assert_eq!((f.query.as_str(), f.current), ("alpha", Some((4, 9))));
     }
 
     #[test]

@@ -43,6 +43,7 @@ const fn key(modifiers: egui::Modifiers, key: egui::Key) -> egui::KeyboardShortc
 const CMD: egui::Modifiers = egui::Modifiers::COMMAND;
 const SAVE: egui::KeyboardShortcut = key(CMD, egui::Key::S);
 const SAVE_ALL: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::S);
+const FIND: egui::KeyboardShortcut = key(CMD, egui::Key::F);
 
 /// The Edit menu. Each command is replayed into the source view as the key or clipboard
 /// event the text box already handles.
@@ -356,6 +357,8 @@ enum Action {
     Open(PathBuf),
     Board,
     CloseTab(usize),
+    /// Move the tab at the first index to the second; the open tab stays open.
+    MoveTab(usize, usize),
     /// Switch to the project in this folder; `true` also opens its PROJECT.md.
     Project(PathBuf, bool),
     Quit,
@@ -388,6 +391,8 @@ struct App {
     tabs: Vec<Editor>,
     /// The tab shown; `None` shows the board.
     active: Option<usize>,
+    /// The open tab the strip last scrolled to.
+    shown_tab: Option<PathBuf>,
     mode: Mode,
     /// An Edit menu command and how many frames until it runs (focus first, then the event).
     edit_cmd: Option<(EditCmd, u8)>,
@@ -410,6 +415,7 @@ impl App {
             loaded: Instant::now(),
             tabs: Vec::new(),
             active: None,
+            shown_tab: None,
             mode: Mode::Split,
             edit_cmd: None,
             pending: None,
@@ -479,7 +485,7 @@ impl App {
         let blocked = match &a {
             Action::CloseTab(i) => self.tabs.get(*i).is_some_and(Editor::dirty),
             Action::Project(..) | Action::Quit => self.tabs.iter().any(Editor::dirty),
-            Action::Open(_) | Action::Board => false,
+            Action::Open(_) | Action::Board | Action::MoveTab(..) => false,
         };
         if blocked {
             self.pending = Some(a);
@@ -510,6 +516,13 @@ impl App {
                 };
             }
             Action::CloseTab(_) => {}
+            Action::MoveTab(from, to) if from < self.tabs.len() && to < self.tabs.len() => {
+                let open = self.current().map(|e| e.path.clone());
+                let tab = self.tabs.remove(from);
+                self.tabs.insert(to, tab);
+                self.active = open.and_then(|p| self.tabs.iter().position(|e| e.path == p));
+            }
+            Action::MoveTab(..) => {}
             Action::Project(dir, open_project) => {
                 self.root = dir;
                 (self.tabs, self.active) = (Vec::new(), None);
@@ -1222,15 +1235,17 @@ const TAB_HEIGHT: f32 = 34.0;
 
 /// One editor tab, drawn like VS Code: flat, the open one in the editor colour with an accent
 /// on top, the close button inside (shown on hover or when open, a dot while unsaved).
-/// Returns (clicked, close clicked).
-fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32), name: &str, dirty: bool, path: &str) -> (bool, bool) {
+/// Returns the tab's response (clicked, dragged, its menu) and whether its close button was clicked.
+/// The id comes from `path`, not the position, so a drag goes on while the tab moves.
+fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32), name: &str, dirty: bool, path: &str) -> (egui::Response, bool) {
     let v = ui.visuals().clone();
     let (pad, gap, close_w) = (12.0, 6.0, 20.0);
     let text = if active { v.strong_text_color() } else { v.weak_text_color() };
     let icon_g = ui.painter().layout_no_wrap(icon.codepoint.to_string(), egui::FontId::new(16.0, icon.font_family()), tint);
     let name_g = ui.painter().layout_no_wrap(name.to_string(), egui::TextStyle::Body.resolve(ui.style()), text);
     let width = pad + icon_g.size().x + gap + name_g.size().x + gap + close_w + pad / 2.0;
-    let (rect, r) = ui.allocate_exact_size(egui::vec2(width, TAB_HEIGHT), egui::Sense::click());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, TAB_HEIGHT), egui::Sense::hover());
+    let r = ui.interact(rect, ui.make_persistent_id(("tab", path)), egui::Sense::click_and_drag());
     r.widget_info(|| egui::WidgetInfo::selected(egui::accesskit::Role::Tab, true, active, name));
     let hovered = ui.rect_contains_pointer(rect);
     let close_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - pad / 2.0 - close_w / 2.0, rect.center().y), egui::vec2(close_w, close_w));
@@ -1252,7 +1267,10 @@ fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32), n
     let shown = (active || hovered) && !(dirty && !hovered);
     let close = egui::Button::new(ICON_CLOSE.rich_text().size(16.0).color(if shown { text } else { Color32::TRANSPARENT })).frame(false);
     let close = ui.put(close_rect, close).on_hover_text("Close").clicked();
-    (r.on_hover_text(path).clicked(), close)
+    if r.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    (r.on_hover_text(path), close)
 }
 
 /// A collapsible explorer section: icon, title and count, with an optional "+" on the right.
@@ -1301,6 +1319,11 @@ impl eframe::App for App {
                 self.save_tab(i);
             }
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&FIND)) {
+            if let Some(i) = self.active {
+                self.tabs[i].open_find();
+            }
+        }
         self.run_edit_cmd(&ctx);
 
         let title = match self.current() {
@@ -1322,6 +1345,7 @@ impl eframe::App for App {
         let mut task_cmd: Option<TaskCmd> = None;
         let mut update_map = false;
         let mut open_error: Option<String> = None;
+        let mut shown_tab: Option<PathBuf> = None;
         let mut resolve: Option<(usize, editor::Resolve)> = None;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
@@ -1370,6 +1394,13 @@ impl eframe::App for App {
                         }
                         if ui.add_enabled(on, egui::Button::new(ic(*icon, label)).shortcut_text(ctx.format_shortcut(sc))).clicked() {
                             self.edit_cmd = Some((*cmd, 1));
+                        }
+                    }
+                    ui.separator();
+                    let find = egui::Button::new(ic(ICON_SEARCH, "Find…")).shortcut_text(ctx.format_shortcut(&FIND));
+                    if ui.add_enabled(self.active.is_some(), find).clicked() {
+                        if let Some(i) = self.active {
+                            self.tabs[i].open_find();
                         }
                     }
                 });
@@ -1595,14 +1626,47 @@ impl eframe::App for App {
                         egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 0.0;
+                                let (mut rects, mut dragging) = (Vec::new(), None);
+                                let last = self.tabs.len() - 1;
                                 for (i, t) in self.tabs.iter().enumerate() {
                                     let icon = file_icon(ui, &v.project, &t.path);
-                                    let (open, close) = tab(ui, self.active == Some(i), icon, &t.name(), t.dirty(), &v.project.rel(&t.path));
-                                    if open {
+                                    let (r, close) = tab(ui, self.active == Some(i), icon, &t.name(), t.dirty(), &v.project.rel(&t.path));
+                                    if r.clicked() {
                                         action = Some(Action::Open(t.path.clone()));
                                     }
                                     if close {
                                         action = Some(Action::CloseTab(i));
+                                    }
+                                    if r.dragged() {
+                                        dragging = ui.ctx().pointer_interact_pos().map(|p| (i, p.x));
+                                    }
+                                    // A tab that just became the open one is scrolled into view.
+                                    if self.active == Some(i) && self.shown_tab.as_ref() != Some(&t.path) {
+                                        r.scroll_to_me(Some(egui::Align::Center));
+                                        shown_tab = Some(t.path.clone());
+                                    }
+                                    r.context_menu(|ui| {
+                                        if ui.add_enabled(i > 0, egui::Button::new(ic(ICON_ARROW_BACK, "Move left"))).clicked() {
+                                            action = Some(Action::MoveTab(i, i - 1));
+                                            ui.close();
+                                        }
+                                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_ARROW_FORWARD, "Move right"))).clicked() {
+                                            action = Some(Action::MoveTab(i, i + 1));
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button(ic(ICON_CLOSE, "Close")).clicked() {
+                                            action = Some(Action::CloseTab(i));
+                                            ui.close();
+                                        }
+                                    });
+                                    rects.push(r.rect);
+                                }
+                                // Dragging a tab over another one puts it there, while the drag goes on.
+                                if let Some((i, x)) = dragging {
+                                    let to = rects.iter().position(|r| r.x_range().contains(x)).unwrap_or(if x < rects[0].left() { 0 } else { last });
+                                    if to != i {
+                                        action = Some(Action::MoveTab(i, to));
                                     }
                                 }
                             });
@@ -1717,6 +1781,9 @@ impl eframe::App for App {
         }
         if let Some(e) = open_error {
             self.message = Some(e);
+        }
+        if shown_tab.is_some() {
+            self.shown_tab = shown_tab;
         }
         // Files dropped on the window go to mwp/content/.
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
@@ -2200,6 +2267,53 @@ mod tests {
         h.get_by_label("Delete").click();
         h.run_steps(3);
         assert!(!root.join("mwp/content/icons/logo.png").exists());
+
+        // Find: Ctrl+F, type, Enter for the next match, Match case, Esc.
+        let notes = root.join("mwp/content/notes.md");
+        fs::write(&notes, "alpha beta Alpha\ngamma alpha\n").unwrap();
+        h.state_mut().reload();
+        let ctx = h.ctx.clone();
+        h.state_mut().apply(&ctx, Action::Open(notes.clone()));
+        h.run_steps(3);
+        let i = h.state().active.unwrap();
+        let picked = |h: &Harness<App>| h.state().tabs[i].find.as_ref().and_then(|f| f.current).unwrap();
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::F]);
+        h.run_steps(3);
+        assert!(h.state().tabs[i].find.is_some());
+        h.get_by_role(Role::TextInput).focus(); // kittest types into the focused widget
+        h.run_steps(2);
+        h.get_by_role(Role::TextInput).type_text("alpha");
+        h.run_steps(3);
+        assert_eq!(picked(&h), (0, 5));
+        h.get_by_label("1 of 3"); // panics when the count is not shown
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!(picked(&h), (11, 16), "Enter goes to the next match, case-insensitive");
+        h.get_by_label(ICON_MATCH_CASE.codepoint).click();
+        h.run_steps(3);
+        h.get_by_role(Role::TextInput).focus();
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!(picked(&h), (23, 28), "with Match case, Alpha is skipped");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        assert!(h.state().tabs[i].find.is_none());
+        // Esc leaves the match selected in the source, which now has the focus.
+        let r = egui::TextEdit::load_state(&h.ctx, h.state().tabs[i].id()).and_then(|s| s.cursor.char_range()).unwrap();
+        let (a, b) = (r.primary.index.0, r.secondary.index.0);
+        assert_eq!((a.min(b), a.max(b)), (23, 28));
+        assert!(h.ctx.memory(|m| m.has_focus(h.state().tabs[i].id())));
+
+        // Right-click a tab > Move left: the order changes, the open tab stays open.
+        let before: Vec<PathBuf> = h.state().tabs.iter().map(|t| t.path.clone()).collect();
+        h.get_by_role_and_label(Role::Tab, "notes.md").click_secondary(); // in view: the open tab is scrolled to
+        h.run_steps(3);
+        h.get_by_label_contains("Move left").click();
+        h.run_steps(3);
+        let after: Vec<PathBuf> = h.state().tabs.iter().map(|t| t.path.clone()).collect();
+        assert_eq!((after[i - 1].clone(), after[i].clone()), (before[i].clone(), before[i - 1].clone()));
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(notes.clone()));
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
