@@ -117,8 +117,8 @@ pub fn task_release(p: &Project, key: &str, status: &str) -> Lines {
     Ok(vec![format!("release {id} (status: {status}, locks freed)")])
 }
 
-/// Rewrites the table in `map.md` when the modules changed. Returns what it did.
-fn refresh_map(root: &Path) -> String {
+/// Rewrites the table in `map.md` when the modules changed. Returns what it did (`warning: ...` on failure).
+pub fn refresh_map(root: &Path) -> String {
     match Project::open(root).and_then(|p| map_texts(&p).map(|t| (p, t))) {
         Ok((p, (cur, new))) if cur != new => match fs::write(p.mwp.join("map.md"), new) {
             Ok(()) => "update mwp/map.md".into(),

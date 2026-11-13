@@ -30,6 +30,8 @@ const SECTIONS: [(&str, &str, MaterialIcon); 5] = [
     ("Open tasks", "tasks/open", ICON_TASK),
     ("Done tasks", "tasks/done", ICON_TASK_ALT),
 ];
+/// How lint reports a stale map.md; that problem gets an "Update map.md" button.
+const MAP_STALE: &str = "mwp/map.md: out of date";
 const LIFETIMES: [(&str, &str); 2] = [("durable", "Lasting reference that stays with its owner"), ("transient", "Working document, incorporated or archived when done")];
 const MODULE_TYPES: [(&str, &str); 3] = [("domain", "Business rules"), ("ui", "Screens and components"), ("infra", "Storage, network, tooling")];
 const SIZES: [(&str, &str); 3] = [("S", "Small: a few lines, one module"), ("M", "Medium: a feature in one or two modules"), ("L", "Large: several modules, plan first")];
@@ -128,6 +130,63 @@ fn folder_menu(ui: &mut egui::Ui, rel: &str, dir: Option<&Path>, cmd: &mut Optio
             ui.close();
         }
     }
+}
+
+/// A task lifecycle step asked from the file header or a card; the task by ID.
+enum TaskCmd {
+    Start(String),
+    Close(String),
+    Release(String, &'static str),
+}
+
+/// Where a task not done can be moved by hand (`task release`): its locks are freed.
+const RELEASE: [(&str, &str); 3] = [("open", "Back to open"), ("blocked", "Blocked"), ("review", "Ready for review")];
+
+/// The status changes for a task, as menu items.
+fn task_status_items(ui: &mut egui::Ui, id: &str, status: &str, cmd: &mut Option<TaskCmd>) {
+    for (s, label) in RELEASE.into_iter().filter(|r| r.0 != status) {
+        let (icon, color) = status_icon(ui, s);
+        let r = ui.button((icon.rich_text().color(color), label));
+        if r.on_hover_text("Frees the task's claim and module locks").clicked() {
+            *cmd = Some(TaskCmd::Release(id.to_string(), s));
+            ui.close();
+        }
+    }
+}
+
+/// Start / Status / Close in the header of an open task (laid out right to left).
+fn task_buttons(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
+    let (id, status) = (t.id(), t.get("status"));
+    if id.is_empty() || status == "done" {
+        return;
+    }
+    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, "Close")).on_hover_text("Set done and move to tasks/done/; ## Closure must be filled").clicked() {
+        *cmd = Some(TaskCmd::Close(id.to_string()));
+    }
+    ui.menu_button(ic(ICON_SWAP_HORIZ, "Status"), |ui| task_status_items(ui, id, status, cmd));
+    if status != "in_progress" {
+        let start = egui::Button::new(ic(ICON_PLAY_ARROW, "Start")).fill(ui.visuals().selection.bg_fill);
+        if ui.add(start).on_hover_text("Claim the task for an agent and lock its modules").clicked() {
+            *cmd = Some(TaskCmd::Start(id.to_string()));
+        }
+    }
+}
+
+/// The same steps in a card's context menu.
+fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
+    let (id, status) = (t.id(), t.get("status"));
+    if id.is_empty() || status == "done" {
+        return;
+    }
+    if status != "in_progress" && ui.button(ic(ICON_PLAY_ARROW, "Start…")).clicked() {
+        *cmd = Some(TaskCmd::Start(id.to_string()));
+        ui.close();
+    }
+    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, "Close")).clicked() {
+        *cmd = Some(TaskCmd::Close(id.to_string()));
+        ui.close();
+    }
+    task_status_items(ui, id, status, cmd);
 }
 
 /// A section without folders: its files, or "Empty".
@@ -238,6 +297,12 @@ enum Dialog {
     /// `folder` is where it goes under mwp/modules/, as `a/b`; empty for the top.
     NewModule { folder: String, id: String, kind: &'static str, summary: String, error: String },
     NewFolder { parent: String, name: String, error: String },
+    /// `adrs`: the decisions in force (ID, title) it may replace; `supersedes` is empty for none.
+    NewAdr { title: String, modules: Vec<(String, bool)>, adrs: Vec<(String, String)>, supersedes: String, error: String },
+    /// `agents`: the agents set up in the project, offered as choices; `modules`: what it locks.
+    StartTask { id: String, agent: String, agents: Vec<String>, modules: Vec<String>, error: String },
+    /// A message with an OK button, for an action that could not be done.
+    Notice { title: String, text: String },
     /// `owners`: the modules, then the tasks not done.
     NewSpec { title: String, owner: String, owners: Vec<String>, lifetime: &'static str, error: String },
     /// `label` names the file; `note` warns about an agent working on it.
@@ -423,6 +488,16 @@ impl App {
         Some(Dialog::NewTask { title: String::new(), size: "M", modules, error: String::new() })
     }
 
+    /// New ADR, with the module open in the editor already checked.
+    fn new_adr_dialog(&self) -> Option<Dialog> {
+        let Some(Dialog::NewTask { modules, .. }) = self.new_task_dialog() else { return None };
+        let v = self.view.as_ref().ok()?;
+        let mut adrs: Vec<&Doc> = v.project.of_kind("adr").filter(|d| matches!(d.get("status"), "accepted" | "proposed")).collect();
+        adrs.sort_by_key(|d| id_num(d.id()));
+        let adrs = adrs.iter().map(|d| (d.id().to_string(), d.title().to_string())).collect();
+        Some(Dialog::NewAdr { title: String::new(), modules, adrs, supersedes: String::new(), error: String::new() })
+    }
+
     /// New SPEC, owned by the module or task open in the editor when there is one.
     fn new_spec_dialog(&self) -> Option<Dialog> {
         let v = self.view.as_ref().ok()?;
@@ -453,6 +528,46 @@ impl App {
             _ => String::new(),
         };
         Some(Dialog::Delete { path, label, note, error: String::new() })
+    }
+
+    /// Start asks for the agent; Close and the status changes run at once. A task with unsaved
+    /// edits is left alone: the step rewrites (or moves) its file.
+    fn run_task_cmd(&mut self, cmd: TaskCmd) {
+        let (TaskCmd::Start(id) | TaskCmd::Close(id) | TaskCmd::Release(id, _)) = &cmd;
+        let Some((path, modules)) = self.view.as_ref().ok().and_then(|v| v.project.by_id("task", id)).map(|t| (t.path.clone(), t.list("modules"))) else { return };
+        let notice = |title: String, text: String| Some(Dialog::Notice { title, text });
+        if self.tabs.iter().any(|e| e.path == path && e.dirty()) {
+            self.dialog = notice(format!("Save {id} first"), "The task has unsaved changes. Save them before changing its status.".into());
+            return;
+        }
+        let project = Project::open(&self.root);
+        match cmd {
+            TaskCmd::Start(id) => {
+                let agents: Vec<String> = scaffold::installed(&self.root).iter().map(|a| a.id.to_string()).collect();
+                let agent = std::env::var("MWP_AGENT").ok().filter(|a| !a.trim().is_empty()).or_else(|| agents.first().cloned()).unwrap_or_else(|| "claude".into());
+                self.dialog = Some(Dialog::StartTask { id, agent, agents, modules, error: String::new() });
+            }
+            TaskCmd::Close(id) => match project.and_then(|p| ops::task_close(&p, &id)) {
+                Ok((lines, report)) => {
+                    // The task moved to tasks/done/ (`close T-0001 -> mwp/tasks/done/...`): its tab follows it.
+                    let dest = lines.iter().find_map(|l| l.split_once(" -> ")).map(|(_, rel)| self.root.join(rel));
+                    if let (Some(dest), Some(tab)) = (dest, self.tabs.iter_mut().find(|e| e.path == path)) {
+                        if let Ok(ed) = Editor::open(&dest) {
+                            *tab = ed;
+                        }
+                    }
+                    if !report.errors.is_empty() {
+                        self.message = Some(format!("{id} closed; lint found {} error(s)", report.errors.len()));
+                    }
+                    self.reload();
+                }
+                Err(e) => self.dialog = notice(format!("Cannot close {id}"), e),
+            },
+            TaskCmd::Release(id, status) => match project.and_then(|p| ops::task_release(&p, &id, status)) {
+                Ok(_) => self.reload(),
+                Err(e) => self.dialog = notice(format!("Cannot change {id}"), e),
+            },
+        }
     }
 
     /// The dialogs; returns what to open or switch to.
@@ -610,6 +725,93 @@ impl App {
                         }
                         close = ui.add(secondary("Cancel")).clicked();
                     });
+                });
+            }
+            Dialog::NewAdr { title, modules, adrs, supersedes, error } => {
+                egui::Modal::new(egui::Id::unique("new-adr")).show(ctx, |ui| {
+                    ui.set_width(480.0);
+                    dialog_title(ui, ICON_GAVEL, "New ADR");
+                    ui.weak("A decision record, created as proposed in mwp/decisions/ with the next free ID.");
+                    ui.add_space(12.0);
+                    section(ui, "Decision", |ui| {
+                        ui.label("Title");
+                        ui.add(egui::TextEdit::singleline(title).hint_text("What was decided, in a few words").desired_width(f32::INFINITY));
+                        ui.add_space(6.0);
+                        ui.label("Replaces");
+                        let none = "None: a new decision".to_string();
+                        let shown = adrs.iter().find(|a| a.0 == *supersedes).map_or(none.clone(), |a| format!("{}  {}", a.0, a.1));
+                        egui::ComboBox::from_id_salt("adr-supersedes").selected_text(shown).width(ui.available_width()).show_ui(ui, |ui| {
+                            ui.selectable_value(supersedes, String::new(), none);
+                            for (id, t) in adrs.iter() {
+                                ui.selectable_value(supersedes, id.clone(), format!("{id}  {t}"));
+                            }
+                        });
+                        if !supersedes.is_empty() {
+                            ui.weak(format!("{supersedes} will be marked superseded."));
+                        }
+                    });
+                    section(ui, "Modules it governs", |ui| {
+                        if modules.is_empty() {
+                            ui.weak("No module yet.");
+                        }
+                        egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                            for (id, on) in modules.iter_mut() {
+                                ui.checkbox(on, id.as_str());
+                            }
+                        });
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        if ui.add_enabled(!title.trim().is_empty(), primary(ui, "Create")).clicked() {
+                            let chosen: Vec<&str> = modules.iter().filter(|m| m.1).map(|m| m.0.as_str()).collect();
+                            let old = Some(supersedes.as_str()).filter(|s| !s.is_empty());
+                            match Project::open(&root).and_then(|p| ops::adr_new(&p, title, Some(&chosen.join(",")), old)) {
+                                Ok(lines) => action = created(&root, &lines),
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close = ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
+            Dialog::StartTask { id, agent, agents, modules, error } => {
+                egui::Modal::new(egui::Id::unique("start-task")).show(ctx, |ui| {
+                    ui.set_width(440.0);
+                    dialog_title(ui, ICON_PLAY_ARROW, &format!("Start {id}"));
+                    ui.weak(if modules.is_empty() { "Claims the task for an agent. It locks no module.".to_string() } else { format!("Claims the task for an agent and locks: {}.", modules.join(", ")) });
+                    ui.add_space(12.0);
+                    section(ui, "Agent", |ui| {
+                        ui.add(egui::TextEdit::singleline(agent).hint_text("Who works on it").desired_width(f32::INFINITY));
+                        if !agents.is_empty() {
+                            ui.horizontal_wrapped(|ui| {
+                                for a in agents.iter() {
+                                    ui.selectable_value(agent, a.clone(), format!(" {a} "));
+                                }
+                            });
+                        }
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        if ui.add_enabled(!agent.trim().is_empty(), primary(ui, "Start")).clicked() {
+                            match Project::open(&root).and_then(|p| ops::task_start(&p, id, agent.trim())) {
+                                Ok(_) => (changed, close) = (true, true),
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close |= ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
+            Dialog::Notice { title, text } => {
+                egui::Modal::new(egui::Id::unique("notice")).show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    dialog_title(ui, ICON_INFO, title);
+                    ui.add_space(6.0);
+                    ui.label(text.as_str());
+                    ui.separator();
+                    right_row(ui, |ui| close = ui.add(primary(ui, "OK")).clicked());
                 });
             }
             Dialog::Delete { path, label, note, error } => {
@@ -1018,9 +1220,11 @@ impl eframe::App for App {
         let (mut save, mut save_all) = (false, false);
         let mut reload = false;
         let (mut new_dialog, mut open_dialog) = (false, false);
-        let (mut new_task, mut new_module, mut new_spec) = (false, false, false);
+        let (mut new_task, mut new_module, mut new_spec, mut new_adr) = (false, false, false, false);
         let mut ask_delete: Option<PathBuf> = None;
         let mut folder_cmd: Option<FolderCmd> = None;
+        let mut task_cmd: Option<TaskCmd> = None;
+        let mut update_map = false;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
             (Ok(v), Some(ed)) if ops::deletable(&v.project, &ed.path) => Some(ed.path.clone()),
@@ -1041,6 +1245,7 @@ impl eframe::App for App {
                     new_task = ui.add_enabled(project, egui::Button::new(ic(ICON_ADD_TASK, "New task…"))).clicked();
                     new_module = ui.add_enabled(project, egui::Button::new(ic(ICON_EXTENSION, "New module…"))).clicked();
                     new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, "New SPEC…"))).clicked();
+                    new_adr = ui.add_enabled(project, egui::Button::new(ic(ICON_GAVEL, "New ADR…"))).clicked();
                     ui.separator();
                     let dirty = self.current().is_some_and(Editor::dirty);
                     save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, "Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
@@ -1199,6 +1404,7 @@ impl eframe::App for App {
                             let add = match *label {
                                 "Modules" => Some("New module"),
                                 "Specs" => Some("New SPEC"),
+                                "Decisions" => Some("New ADR"),
                                 _ => None,
                             };
                             let (plus, header) = if *label == "Modules" {
@@ -1212,7 +1418,7 @@ impl eframe::App for App {
                                 header.context_menu(|ui| folder_menu(ui, "", None, &mut folder_cmd));
                             }
                             if plus {
-                                (new_module, new_spec) = (*label == "Modules", *label == "Specs");
+                                (new_module, new_spec, new_adr) = (*label == "Modules", *label == "Specs", *label == "Decisions");
                             }
                         }
                         // Tasks last, as one group with Open and Done inside.
@@ -1237,10 +1443,15 @@ impl eframe::App for App {
                             let errors = v.report.errors.iter().map(|l| (l, ui.visuals().error_fg_color, ICON_ERROR));
                             let warnings = v.report.warnings.iter().map(|l| (l, ui.visuals().warn_fg_color, ICON_WARNING));
                             for (line, color, icon) in errors.chain(warnings).collect::<Vec<_>>() {
-                                let r = ui.selectable_label(false, (icon.rich_text().color(color), RichText::new(line).monospace()));
-                                if r.clicked() {
-                                    action = problem_path(&self.root, line).map(Action::Open);
-                                }
+                                ui.horizontal(|ui| {
+                                    let r = ui.selectable_label(false, (icon.rich_text().color(color), RichText::new(line).monospace()));
+                                    if r.clicked() {
+                                        action = problem_path(&self.root, line).map(Action::Open);
+                                    }
+                                    if line.starts_with(MAP_STALE) {
+                                        update_map |= ui.small_button(ic(ICON_REFRESH, "Update map.md")).clicked();
+                                    }
+                                });
                             }
                             if v.report.errors.is_empty() && v.report.warnings.is_empty() {
                                 ui.weak("No errors or warnings.");
@@ -1290,13 +1501,18 @@ impl eframe::App for App {
                                 meta.extend(["status", "size", "type", "agent"].iter().filter_map(|k| doc.map(|d| d.get(k)).filter(|s| !s.is_empty()).map(|s| format!("{k}: {s}"))));
                                 dim(ui, meta.join("   ·   "));
                             });
-                            if deletable.is_some() {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button(ic(ICON_DELETE, "Delete")).on_hover_text("Delete this file").clicked() {
-                                        ask_delete = deletable.clone();
-                                    }
-                                });
-                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if deletable.is_some() && ui.button(ic(ICON_DELETE, "Delete")).on_hover_text("Delete this file").clicked() {
+                                    ask_delete = deletable.clone();
+                                }
+                                if let Some(t) = doc.filter(|d| d.kind() == "task") {
+                                    task_buttons(ui, t, &mut task_cmd);
+                                }
+                                let stale = v.report.errors.iter().any(|e| e.starts_with(MAP_STALE));
+                                if stale && ed.path == v.project.mwp.join("map.md") {
+                                    update_map |= ui.button(ic(ICON_REFRESH, "Update map.md")).on_hover_text("Rebuild the module table from the modules, like mwp remap").clicked();
+                                }
+                            });
                         });
                         ui.separator();
                         editor::show(ui, ed, &mut self.mode);
@@ -1334,6 +1550,7 @@ impl eframe::App for App {
                                                 action = Some(Action::Open(t.path.clone()));
                                                 ui.close();
                                             }
+                                            task_menu(ui, t, &mut task_cmd);
                                             if ops::deletable(&v.project, &t.path) && ui.button(ic(ICON_DELETE, "Delete…")).clicked() {
                                                 ask_delete = Some(t.path.clone());
                                                 ui.close();
@@ -1361,6 +1578,19 @@ impl eframe::App for App {
         if new_module && self.view.is_ok() {
             folder_cmd = Some(FolderCmd::NewModule(String::new()));
         }
+        if let Some(cmd) = task_cmd {
+            self.run_task_cmd(cmd);
+        }
+        if update_map {
+            let map = self.root.join("mwp/map.md");
+            if self.tabs.iter().any(|e| e.path == map && e.dirty()) {
+                self.dialog = Some(Dialog::Notice { title: "Save map.md first".into(), text: "map.md has unsaved changes. Save them before it is rebuilt.".into() });
+            } else {
+                let done = ops::refresh_map(&self.root);
+                self.message = done.starts_with("warning").then_some(done);
+                self.reload();
+            }
+        }
         match folder_cmd {
             Some(FolderCmd::NewModule(folder)) => {
                 self.dialog = Some(Dialog::NewModule { folder, id: String::new(), kind: "domain", summary: String::new(), error: String::new() });
@@ -1377,6 +1607,9 @@ impl eframe::App for App {
         }
         if new_spec {
             self.dialog = self.new_spec_dialog();
+        }
+        if new_adr {
+            self.dialog = self.new_adr_dialog();
         }
         if let Some(path) = ask_delete {
             self.dialog = self.delete_dialog(path);
@@ -1693,6 +1926,83 @@ mod tests {
         assert!(h.get_by_label_contains("Delete folder").accesskit_node().is_disabled(), "a folder with modules cannot be deleted");
         h.key_press(egui::Key::Escape);
         h.run_steps(3);
+
+        // Task lifecycle from the file header: Start, Status > review, Close (refused, then done).
+        let life = root.join("mwp/tasks/open/T-0009-life.md");
+        fs::write(&life, "---\nkind: task\nid: T-0009\nstatus: open\nsize: S\nmodules: [user-auth]\n---\n# T-0009 — Life\n").unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        h.get_by_label_contains("T-0009 Life").click();
+        h.run_steps(3);
+        let header = |icon: MaterialIcon, text: &str| format!("{} {text}", icon.codepoint);
+        h.get_by_label(&header(ICON_PLAY_ARROW, "Start")).click();
+        h.run_steps(30);
+        if let Some(Dialog::StartTask { agent, modules, .. }) = h.state_mut().dialog.as_mut() {
+            assert_eq!(modules, &["user-auth"]);
+            *agent = "claude".into();
+        } else {
+            panic!("the Start dialog did not open");
+        }
+        h.run_steps(3);
+        h.get_by_label("Start").click(); // the dialog's button
+        h.run_steps(3);
+        let task = || Project::open(&root).unwrap().by_id("task", "T-0009").map(|t| (t.get("status").to_string(), t.get("agent").to_string(), t.path.clone()));
+        assert_eq!(task().map(|t| (t.0, t.1)), Some(("in_progress".into(), "claude".into())));
+        assert_eq!(state::locks(&root.join(".mwp")).len(), 1);
+
+        h.get_by_label(&header(ICON_SWAP_HORIZ, "Status")).click();
+        h.run_steps(3);
+        h.get_by_label_contains("Ready for review").click();
+        h.run_steps(3);
+        assert_eq!(task().unwrap().0, "review");
+        assert!(state::locks(&root.join(".mwp")).is_empty(), "releasing frees the locks");
+
+        h.get_by_label(&header(ICON_DONE_ALL, "Close")).click();
+        h.run_steps(30);
+        assert!(matches!(&h.state().dialog, Some(Dialog::Notice { title, .. }) if title == "Cannot close T-0009"));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        fs::write(&life, fs::read_to_string(&life).unwrap() + "\n## Closure\n- Checked by hand.\n").unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        h.get_by_label(&header(ICON_DONE_ALL, "Close")).click();
+        h.run_steps(3);
+        let done = root.join("mwp/tasks/done/T-0009-life.md");
+        assert_eq!(task(), Some(("done".into(), "claude".into(), done.clone())));
+        assert!(!life.exists() && h.state().current().is_some_and(|e| e.path == done), "the tab follows the file to tasks/done/");
+
+        // A module summary edited on disk leaves map.md stale; the problem's button rebuilds it.
+        let stale = |h: &Harness<App>| h.state().view.as_ref().unwrap().report.errors.iter().any(|e| e.starts_with(MAP_STALE));
+        fs::write(&module, fs::read_to_string(&module).unwrap().replace("Sign in and sessions", "Sign in")).unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        assert!(stale(&h));
+        h.get_by_label_contains("Update map.md").click();
+        h.run_steps(3);
+        assert!(!stale(&h) && fs::read_to_string(root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
+
+        // File > New ADR, then a second one that replaces it.
+        for (title, replaces) in [("Store money in cents", ""), ("Store money as decimal", "ADR-0001")] {
+            h.get_all_by_label("File").next().unwrap().click();
+            h.run_steps(3);
+            h.get_by_label_contains("New ADR…").click();
+            h.run_steps(30);
+            if let Some(Dialog::NewAdr { title: t, modules, supersedes, adrs, .. }) = h.state_mut().dialog.as_mut() {
+                assert_eq!(adrs.len(), if replaces.is_empty() { 0 } else { 1 });
+                *t = title.into();
+                *supersedes = replaces.into();
+                modules.iter_mut().filter(|m| m.0 == "user-auth").for_each(|m| m.1 = true);
+            } else {
+                panic!("the New ADR dialog did not open");
+            }
+            h.run_steps(3);
+            h.get_by_label("Create").click();
+            h.run_steps(3);
+        }
+        let p = Project::open(&root).unwrap();
+        assert_eq!(p.by_id("adr", "ADR-0001").unwrap().get("status"), "superseded");
+        assert_eq!(p.by_id("adr", "ADR-0002").unwrap().list("modules"), ["user-auth"]);
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(p.by_id("adr", "ADR-0002").unwrap().path.clone()));
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
