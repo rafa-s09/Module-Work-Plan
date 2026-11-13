@@ -51,9 +51,10 @@ O `init` cria os arquivos abaixo e **nunca sobrescreve** um arquivo existente. E
 
 ```
 AGENTS.md                       # aponta para a constituição, para qualquer agente
-CLAUDE.md                       # o mesmo ponteiro, para o Claude Code
+CLAUDE.md                       # o mesmo ponteiro, para o Claude Code (outros agentes: seção 6)
 .claude/skills/mwp/SKILL.md     # skill de fluxo de trabalho (as duas skills são omitidas com --no-skill)
 .claude/skills/module/SKILL.md  # skill de módulos
+.gitignore                      # recebe as duas linhas de .mwp se faltarem
 mwp/
 ├── PROJECT.md
 ├── constitution.md
@@ -71,7 +72,7 @@ Depois:
 
 1. **Preencha `mwp/PROJECT.md`**: o que é o projeto, a stack e os comandos para rodar e testar.
 2. **Adapte `mwp/constitution.md`**: substitua cada `<placeholder>` pelas regras do seu projeto (bibliotecas, comando de teste, o que o agente não pode fazer).
-3. **Adicione ao `.gitignore`**: o ledger é versionado, o resto de `.mwp/` é local.
+3. **Confira o `.gitignore`**: o `init` adiciona estas linhas. O ledger é versionado, o resto de `.mwp/` (reservas e bloqueios) é local.
 
    ```gitignore
    .mwp/*
@@ -181,13 +182,13 @@ Se o total for grande, divida a task.
 Você também pode usar o código da empresa (*"Execute PROJ-1234"*). O agente segue a skill:
 
 1. `mwp context T-0001 --paths`, depois lê apenas esses arquivos.
-2. Define `status: in_progress` e cria a branch `task/T-0001-volume-discount`.
+2. Roda `mwp task start T-0001`, que define `status: in_progress` e bloqueia os módulos da task, e cria a branch `task/T-0001-volume-discount`.
 3. Tamanho L: escreve o plano e para até a aprovação.
 4. Escreve os testes primeiro (`mwp next TEST --reserve`) e confirma que falham.
 5. Implementa, apenas nos módulos listados em `modules:`.
 6. Verifica cada critério.
 7. Atualiza os módulos e roda `mwp remap`.
-8. Preenche `## Closure` com a evidência, define `status: done`, move o arquivo para `tasks/done/` e roda `mwp lint`.
+8. Preenche `## Closure` com a evidência e roda `mwp task close T-0001`, que define `status: done`, move o arquivo para `tasks/done/`, libera os bloqueios e roda o lint.
 
 Se um critério `[manual]` não pôde ser verificado, a task vai para `status: review` e uma pessoa confirma. O agente para e pergunta quando a task contradiz um módulo ou um ADR aceito, quando o código contradiz o seu módulo, ou quando um teste existente falha e parece contradizer a task.
 
@@ -246,7 +247,7 @@ ADR-0001  accepted    2026-11-03 Store money in cents
 
 ## 5. As skills do agente
 
-O `mwp init` instala duas skills em `.claude/skills/` (pule-as com `--no-skill`).
+O `mwp init` instala duas skills na pasta de skills de cada agente escolhido, `.claude/skills/` por padrão (pule-as com `--no-skill`).
 
 ### `mwp`: o fluxo de trabalho
 
@@ -272,7 +273,7 @@ Os dois terminam com um relatório que cita um arquivo e uma linha, ou o ID de u
 
 A skill explica **como** trabalhar; `mwp/constitution.md` guarda as **regras**. Se as duas discordarem, a constituição vence. Não copie regras para a skill, para o `AGENTS.md` ou para o `CLAUDE.md`: isso cria duas fontes de verdade.
 
-**Outros agentes.** O `AGENTS.md` aponta qualquer agente para a constituição, o que basta para seguir o formato. Se o seu agente aceita skills, copie os dois arquivos `SKILL.md` para a pasta de skills dele.
+**Outros agentes.** `mwp init --agent codex,cursor,gemini,copilot` grava o arquivo de instruções e as skills onde cada agente os procura. Para qualquer outro agente, o `AGENTS.md` aponta para a constituição, o que basta para seguir o formato, e `mwp context T-0001 --cat` imprime de uma vez tudo que a task precisa.
 
 ## 6. Referência do CLI
 
@@ -280,12 +281,23 @@ O `mwp` encontra o projeto procurando `mwp/` na pasta atual e nas pastas acima d
 
 ### `mwp init [dir]`
 
-Cria a estrutura em `dir` (padrão: pasta atual). Nunca sobrescreve.
+Cria a estrutura em `dir` (padrão: pasta atual). Nunca sobrescreve. Em um terminal, pergunta quais agentes vão trabalhar no projeto e o nome do projeto; um agente ou um script recebe os padrões, sem perguntas. Também adiciona `.mwp/*` e `!.mwp/ledger.json` ao `.gitignore`.
 
 | Opção | Efeito |
 |---|---|
+| `--agent a,b` | Agentes a configurar, ou `all`. Sem escolha, usa `claude` |
 | `--name <name>` | Preenche o nome do projeto no `PROJECT.md` |
-| `--no-skill` | Não instala as skills em `.claude/skills/` |
+| `--no-skill` | Não instala as skills |
+
+| Agente | Arquivo de instruções | Pasta de skills |
+|---|---|---|
+| `claude` (padrão) | `CLAUDE.md` | `.claude/skills/` |
+| `codex` | `AGENTS.md` | `.agents/skills/` |
+| `cursor` | `AGENTS.md` | `.cursor/skills/` |
+| `gemini` | `GEMINI.md` | `.gemini/skills/` |
+| `copilot` | `.github/copilot-instructions.md` | `.github/skills/` |
+
+O `AGENTS.md` é sempre criado. Rode `mwp init --agent <id>` de novo para adicionar um agente depois.
 
 ### `mwp task new <title>`
 
@@ -309,6 +321,19 @@ Lista as tasks com ID, status, tamanho, título e códigos externos. Por padrão
 | `--module <id>` | Apenas tasks que escrevem neste módulo |
 | `--all` | Inclui as tasks concluídas |
 
+### `mwp task start` / `close` / `release` / `mwp locks`
+
+Vários agentes podem trabalhar no mesmo projeto ao mesmo tempo. Uma task em andamento pertence a um agente, e um módulo é escrito por uma task de cada vez.
+
+| Comando | Efeito |
+|---|---|
+| `mwp task start <T-XXXX> [--agent <nome>]` | Define `status: in_progress` e `agent:`, e bloqueia os módulos de `modules:`. Falha, sem alterar nada, se a task já foi pega ou se outra task está escrevendo em um dos módulos. Nome padrão: `MWP_AGENT`, ou `agent` |
+| `mwp task close <T-XXXX>` | Recusa um `## Closure` vazio. Define `status: done`, move o arquivo para `tasks/done/`, libera os bloqueios e roda o `lint` |
+| `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Devolve a task sem fechá-la (padrão `open`) e libera os bloqueios. Use também quando um agente parou sem terminar |
+| `mwp locks` | Tasks em andamento, seus agentes e os módulos que bloqueiam |
+
+As reservas e os bloqueios são arquivos simples em `.mwp/claims/` e `.mwp/locks/`; o CLI não usa o git. Agentes na mesma pasta os compartilham. Se cada agente tem a própria cópia do projeto, defina `MWP_STATE_DIR` com uma pasta que todos alcancem, para compartilharem IDs e bloqueios.
+
 ### `mwp context <T-XXXX | code>`
 
 Lista os arquivos que o agente carrega para a task: a constituição, a task e o que ela cita em `modules:`, `reads:`, `specs:`, `decisions:` e `refs:`, com uma estimativa de tokens (cerca de 4 bytes por token). Imprime `MISSING` e termina com código 1 para referências que não existem.
@@ -316,6 +341,7 @@ Lista os arquivos que o agente carrega para a task: a constituição, a task e o
 | Opção | Efeito |
 |---|---|
 | `--paths` | Imprime apenas os caminhos, um por linha |
+| `--cat` | Imprime o conteúdo de cada arquivo, para agentes sem skills |
 
 ### `mwp next <T | SP | ADR | TEST>`
 
@@ -372,7 +398,7 @@ Verifica o projeto inteiro. Confere apenas o que não exige julgamento humano:
 | Verificações de módulo do `remap` | erro |
 | `map.md` desatualizado | erro |
 | `type` do módulo fora de `ui` / `domain` / `infra`; nome de arquivo que não começa com o ID da task | aviso |
-| Acima dos limites de tamanho (PROJECT ~60, constituição ~150, módulo ~200, task ~80 linhas) | aviso |
+| Acima dos limites de tamanho (PROJECT ~150, constituição ~300, módulo ~500, task ~200 linhas) | aviso, nunca erro |
 
 | Opção | Efeito |
 |---|---|

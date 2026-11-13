@@ -1,10 +1,15 @@
 [package]
 name = "mwp"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 description = "CLI for MWP (Module Work Plan): create, check and navigate the mwp/ documentation."
 license = "Apache-2.0"
+
+# The core is a library so a GUI can use it without going through the CLI.
+[lib]
+name = "mwp_core"
+path = "src/lib.rs"
 
 [[bin]]
 name = "mwp"

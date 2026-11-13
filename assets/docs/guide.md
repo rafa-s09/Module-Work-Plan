@@ -49,9 +49,10 @@ mwp init --name "Store"
 
 ```
 AGENTS.md                       # pointer to the constitution, for any agent
-CLAUDE.md                       # same pointer, for Claude Code
+CLAUDE.md                       # same pointer, for Claude Code (other agents: section 6)
 .claude/skills/mwp/SKILL.md     # workflow skill (both skills omitted with --no-skill)
 .claude/skills/module/SKILL.md  # module skill
+.gitignore                      # gets the two .mwp lines if they are missing
 mwp/
 ├── PROJECT.md
 ├── constitution.md
@@ -69,7 +70,7 @@ Then:
 
 1. **Fill `mwp/PROJECT.md`**: what the project is, the stack, and the commands to run and test it.
 2. **Adapt `mwp/constitution.md`**: replace each `<placeholder>` with your project's rules (libraries, test command, what the agent may not do).
-3. **Add to `.gitignore`**: the ledger is versioned, the rest of `.mwp/` is local.
+3. **Check `.gitignore`**: `init` adds these lines. The ledger is versioned, the rest of `.mwp/` (claims and locks) is local.
 
    ```gitignore
    .mwp/*
@@ -179,13 +180,13 @@ If the total is large, split the task.
 You can also use the company code (*"Execute PROJ-1234"*). The agent follows the skill:
 
 1. `mwp context T-0001 --paths`, then reads only those files.
-2. Sets `status: in_progress`, creates the branch `task/T-0001-volume-discount`.
+2. Runs `mwp task start T-0001`, which sets `status: in_progress` and locks the task's modules, and creates the branch `task/T-0001-volume-discount`.
 3. Size L: writes the plan and stops for approval.
 4. Writes the tests first (`mwp next TEST --reserve`), confirms they fail.
 5. Implements, only in the modules listed in `modules:`.
 6. Verifies every criterion.
 7. Updates the modules and runs `mwp remap`.
-8. Fills `## Closure` with evidence, sets `status: done`, moves the file to `tasks/done/`, runs `mwp lint`.
+8. Fills `## Closure` with evidence and runs `mwp task close T-0001`, which sets `status: done`, moves the file to `tasks/done/`, frees the locks and runs lint.
 
 If a `[manual]` criterion could not be checked, the task goes to `status: review` and a person confirms it. The agent stops and asks when the task contradicts a module or an accepted ADR, when the code contradicts its module, or when an existing test fails and seems to contradict the task.
 
@@ -244,7 +245,7 @@ ADR-0001  accepted    2026-11-03 Store money in cents
 
 ## 5. The agent skills
 
-`mwp init` installs two skills in `.claude/skills/` (skip them with `--no-skill`).
+`mwp init` installs two skills in the skills folder of each chosen agent, `.claude/skills/` by default (skip them with `--no-skill`).
 
 ### `mwp`: the workflow
 
@@ -270,7 +271,7 @@ Both end with a report that cites a file and line, or a rule ID, for every findi
 
 The skill explains **how** to work; `mwp/constitution.md` holds the **rules**. If the two disagree, the constitution wins. Do not copy rules into the skill, `AGENTS.md` or `CLAUDE.md`: that creates two sources of truth.
 
-**Other agents.** `AGENTS.md` points any agent to the constitution, which is enough to follow the format. If your agent supports skills, copy both `SKILL.md` files to its skills folder.
+**Other agents.** `mwp init --agent codex,cursor,gemini,copilot` writes the instruction file and the skills where each agent looks for them. For any other agent, `AGENTS.md` points to the constitution, which is enough to follow the format, and `mwp context T-0001 --cat` prints everything the task needs in one stream.
 
 ## 6. CLI reference
 
@@ -278,12 +279,23 @@ The skill explains **how** to work; `mwp/constitution.md` holds the **rules**. I
 
 ### `mwp init [dir]`
 
-Creates the structure in `dir` (default: current folder). Never overwrites.
+Creates the structure in `dir` (default: current folder). Never overwrites. At a terminal it asks which agents will work on the project and the project name; an agent or a script gets the defaults without questions. It also adds `.mwp/*` and `!.mwp/ledger.json` to `.gitignore`.
 
 | Option | Effect |
 |---|---|
+| `--agent a,b` | Agents to set up, or `all`. No choice means `claude` |
 | `--name <name>` | Fills the project name in `PROJECT.md` |
-| `--no-skill` | Does not install the skills in `.claude/skills/` |
+| `--no-skill` | Does not install the skills |
+
+| Agent | Instruction file | Skills folder |
+|---|---|---|
+| `claude` (default) | `CLAUDE.md` | `.claude/skills/` |
+| `codex` | `AGENTS.md` | `.agents/skills/` |
+| `cursor` | `AGENTS.md` | `.cursor/skills/` |
+| `gemini` | `GEMINI.md` | `.gemini/skills/` |
+| `copilot` | `.github/copilot-instructions.md` | `.github/skills/` |
+
+`AGENTS.md` is always created. Run `mwp init --agent <id>` again to add an agent later.
 
 ### `mwp task new <title>`
 
@@ -307,6 +319,19 @@ Lists tasks with ID, status, size, title and external codes. Open tasks by defau
 | `--module <id>` | Only tasks that write this module |
 | `--all` | Includes done tasks |
 
+### `mwp task start` / `close` / `release` / `mwp locks`
+
+Several agents can work on one project at the same time. A task in progress belongs to one agent, and a module is written by one task at a time.
+
+| Command | Effect |
+|---|---|
+| `mwp task start <T-XXXX> [--agent <name>]` | Sets `status: in_progress` and `agent:`, and locks the modules in `modules:`. Fails, changing nothing, if the task is taken or another task is writing one of its modules. Default name: `MWP_AGENT`, or `agent` |
+| `mwp task close <T-XXXX>` | Refuses an empty `## Closure`. Sets `status: done`, moves the file to `tasks/done/`, frees the locks and runs `lint` |
+| `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Gives the task back without closing it (default `open`) and frees its locks. Also use it when an agent stopped without finishing |
+| `mwp locks` | Tasks in progress, their agents and the modules they lock |
+
+Claims and locks are plain files in `.mwp/claims/` and `.mwp/locks/`; the CLI does not use git. Agents in the same folder share them. If each agent has its own copy of the project, set `MWP_STATE_DIR` to one folder they all can reach, so they share IDs and locks.
+
 ### `mwp context <T-XXXX | code>`
 
 Lists the files the agent loads for the task: the constitution, the task, and what it cites in `modules:`, `reads:`, `specs:`, `decisions:` and `refs:`, with a token estimate (about 4 bytes per token). Prints `MISSING` and exits 1 for references that do not exist.
@@ -314,6 +339,7 @@ Lists the files the agent loads for the task: the constitution, the task, and wh
 | Option | Effect |
 |---|---|
 | `--paths` | Prints only the paths, one per line |
+| `--cat` | Prints the contents of every file, for agents without skills |
 
 ### `mwp next <T | SP | ADR | TEST>`
 
@@ -370,7 +396,7 @@ Checks the whole project. It verifies only what needs no human judgment:
 | Module checks from `remap` | error |
 | `map.md` out of date | error |
 | Module `type` outside `ui` / `domain` / `infra`; file name not starting with the task ID | warning |
-| Over the size limits (PROJECT ~60, constitution ~150, module ~200, task ~80 lines) | warning |
+| Over the size limits (PROJECT ~150, constitution ~300, module ~500, task ~200 lines) | warning, never an error |
 
 | Option | Effect |
 |---|---|

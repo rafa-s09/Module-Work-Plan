@@ -64,10 +64,10 @@ Install the CLI from a checkout of this repository (requires [Rust](https://rust
 .\src\install.ps1 path\to\your-project
 ```
 
-Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which creates `mwp/`, `AGENTS.md`, `CLAUDE.md` and the agent skills without overwriting anything. Leave the folder out to only install the CLI.
+Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which asks which agents you use (Claude Code by default; also Codex, Cursor, Gemini CLI and GitHub Copilot) and creates `mwp/`, `AGENTS.md`, each agent's instruction file and skills, without overwriting anything. Leave the folder out to only install the CLI.
 
 1. Fill `mwp/PROJECT.md` and replace the `<placeholders>` in `mwp/constitution.md`.
-2. Add `.mwp/*` and `!.mwp/ledger.json` to `.gitignore`: the ledger is versioned, the rest of `.mwp/` is local.
+2. Check `.gitignore`: `init` adds `.mwp/*` and `!.mwp/ledger.json`. The ledger is versioned, the rest of `.mwp/` is local.
 3. Document the module you will touch first (copy `mwp/modules/_template.md`, or ask your agent to use the `module` skill on existing code), then run `mwp remap`.
 4. Create a task: `mwp task new "Order discount" --modules order`.
 5. Ask your agent: *"Execute task T-0001"*.
@@ -78,8 +78,10 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 
 | Command | What it does |
 |---|---|
-| `mwp init` | Creates the `mwp/` structure; never overwrites |
+| `mwp init [--agent a,b]` | Creates the `mwp/` structure and the files of each agent; never overwrites |
 | `mwp task new` / `mwp task-list` | Creates a task with the next ID / lists tasks |
+| `mwp task start` / `close` / `release` | Claims a task and locks its modules for one agent / closes it and runs lint / gives it back |
+| `mwp locks` | Tasks in progress, their agents and locked modules |
 | `mwp context T-0001` | Files the agent will read for a task, with a token estimate |
 | `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json` |
 | `mwp adr new` / `mwp adr list` | Creates a proposed ADR (optionally superseding one) / lists ADRs |
@@ -101,7 +103,7 @@ It has 8 modules, an ADR (all money is stored as whole reales), 7 finished tasks
 | Path | Contents |
 |---|---|
 | [`templates/`](templates) | Files `mwp init` copies into a project |
-| [`src/client/`](src/client) | The `mwp` CLI (Rust, no dependencies) |
+| [`src/client/`](src/client) | The `mwp` CLI and its core library (Rust, no dependencies, no git needed) |
 | [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |

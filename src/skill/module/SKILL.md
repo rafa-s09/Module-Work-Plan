@@ -25,7 +25,7 @@ A module describes how a part of the system works **today**. This skill builds m
    - `domain`: business rules and states. Rules live here.
    - `ui`: screens, CLI, API handlers. They cite domain rules (`see order#FR-02`), never repeat them.
    - `infra`: database, external services, queues, files.
-   - A module over ~200 lines must be split, or its detail moved to a durable SPEC.
+   - A module over ~500 lines must be split, or its detail moved to a durable SPEC.
 4. **Stop and show the proposal** as a table (ID, type, summary, `code:`, `tests:`, `depends_on:`) with the reason for each boundary. Write nothing until a person approves it.
 5. **Write each module** from `mwp/modules/_template.md`:
    - Front matter: `code:` and `tests:` point to real folders; `depends_on:` comes from real imports; `updated:` is today.
@@ -55,7 +55,7 @@ Audit every module, or only the ones asked for. For each module:
    | Dependencies | Does `depends_on` match the real imports? |
    | ADRs | Does the code follow every accepted ADR that governs it? |
    | Pitfalls | Are listed pitfalls still true? |
-   | Size | Is the module over ~200 lines? |
+   | Size | Is the module over ~500 lines? |
 
 4. **Act on each finding:**
 

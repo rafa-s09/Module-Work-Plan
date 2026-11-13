@@ -22,6 +22,7 @@ description: Work in a project documented with MWP (Module Work Plan). Use when 
 | `mwp/PROJECT.md`, `mwp/glossary.md` | Overview, commands, domain terms |
 | `mwp/content/` | Optional. Resources for the project: icons, images, design files, documents |
 | `.mwp/ledger.json` | Last reserved ID per prefix; written by the CLI, never by hand |
+| `.mwp/claims/`, `.mwp/locks/` | Which agent holds each task in progress and each module being written; written by the CLI, never by hand |
 
 Files starting with `_` are templates: copy them, never treat them as real tasks, modules, SPECs or ADRs. `mwp/modules/README.md` explains the folder and is not a module.
 
@@ -49,7 +50,7 @@ Every file starts with YAML front matter. Read the front matter first; it tells 
 When asked "execute T-0043" (or a company code that maps to it):
 
 1. **Load context.** Run `mwp context T-0043 --paths` and read exactly those files. Load more only when the constitution allows it, and stop as soon as you have enough. Never read the whole `modules/` folder or `tasks/done/`. If it prints `MISSING`, the task cites something that does not exist: stop and ask.
-2. **Set `status: in_progress`** and create the branch `task/T-0043-slug`.
+2. **Claim it:** `mwp task start T-0043 --agent <your agent name>` sets `status: in_progress` and locks the modules in `modules:`. If it fails, another agent holds the task or one of its modules: stop and report, never work around it. Then create the branch `task/T-0043-slug`.
 3. **Size L:** write the `## Plan` and **stop** until a person approves it.
 4. **Size M and L:** write the tests first (`mwp next TEST --reserve` for each new ID), run them, confirm they fail for the expected reason. Test names start with their ID: `TEST-0007: ...`.
 5. **Implement**, writing only code that belongs to modules in `modules:`.
@@ -59,9 +60,9 @@ When asked "execute T-0043" (or a company code that maps to it):
    - `[regression]`: all tests of the touched modules pass.
    - `[doc]`: the module and its changelog reflect the change.
 7. **Update the modules:** new rules, the `## Tests` table, `updated:`, the changelog row with the task ID. Then run `mwp remap`: it checks module paths, dependencies and registered tests, and rewrites `map.md`.
-8. **Close:** fill `## Closure` with evidence for every criterion (command and result, or what you observed), set `status: done`, move the file to `tasks/done/`, and run `mwp lint`. The task is not done until lint reports no errors.
+8. **Close:** fill `## Closure` with evidence for every criterion (command and result, or what you observed), then run `mwp task close T-0043`: it sets `status: done`, moves the file to `tasks/done/`, frees the locks and runs lint. The task is not done until lint reports no errors.
 
-If a `[manual]` criterion could not be checked, set `status: review`, list what is missing and stop.
+If a `[manual]` criterion could not be checked, list what is missing, run `mwp task release T-0043 --status review` and stop. If you must stop for any other reason, release the task (`--status blocked` or `open`) so its modules are free for other agents.
 
 ## Creating a task
 
@@ -70,7 +71,7 @@ If a `[manual]` criterion could not be checked, set `status: review`, list what 
 3. Every criterion says how it is verified. Tasks that change code have at least one `[regression]` and one `[doc]`. Vague criteria ("works well", "clean code") are not allowed.
 4. Run `mwp context T-XXXX`. If the token total is large, split the task.
 
-To see what is pending: `mwp task-list` (or `mwp task list`): open tasks, `--status <s>`, `--module <id>`, `--all`.
+To see what is pending: `mwp task-list` (or `mwp task list`): open tasks, `--status <s>`, `--module <id>`, `--all`. To see what other agents are doing: `mwp locks`.
 
 ## Recording a decision
 
@@ -101,6 +102,7 @@ To create modules for code that has none, or to check existing modules against t
 - **Rework is a new task** with `refs: [T-0043]`. Never edit a done task.
 - **Never edit the table in `map.md` by hand.** It is generated from module front matter.
 - **Module outside the manifest:** read it if you must, and record it in the closure.
+- **One writer per module.** Other agents may be working in this project. Never write a module locked by another task, and never edit `.mwp/` by hand.
 
 ## Stop and ask when
 
@@ -108,6 +110,7 @@ To create modules for code that has none, or to check existing modules against t
 - The code contradicts its module.
 - An existing test fails and seems to contradict the task.
 - `mwp context` reports `MISSING`, or `mwp lint` reports an error you cannot fix inside the task's modules.
+- `mwp task start` fails: another agent holds the task or one of its modules.
 - An ambiguity would change the result.
 
 Priority on conflict: constitution > accepted ADRs > module > task. Never resolve a conflict silently.
@@ -116,12 +119,16 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 
 | Command | What it does | Without the CLI |
 |---|---|---|
-| `mwp init [dir] [--name <n>] [--no-skill]` | Creates `mwp/`, `AGENTS.md`, `CLAUDE.md` and this skill; never overwrites | Copy the templates |
+| `mwp init [dir] [--agent a,b] [--name <n>] [--no-skill]` | Creates `mwp/`, `AGENTS.md` and, for each agent (`claude`, `codex`, `cursor`, `gemini`, `copilot`; default `claude`), its instruction file and this skill; never overwrites | Copy the templates |
 | `mwp lint [--strict]` | Checks front matter, IDs, references, closures, registered tests, map, size limits. Exit 1 on errors (`--strict`: also on warnings) | Check by reading the files |
 | `mwp map [--write \| --check]` | Prints the module table; `--write` updates `map.md`; `--check` fails if it is stale | Rebuild the table between the markers from module front matter |
 | `mwp remap [--dry-run]` | Rechecks modules (paths, `depends_on`, registered tests) and updates `map.md` | Same checks by hand, then rebuild the table |
 | `mwp task new <title> [--size S\|M\|L] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]` | Creates an open task from the template with the next T- ID reserved | `mwp next T --reserve` and copy the task template |
-| `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title and external codes | List `mwp/tasks/open/` |
+| `mwp task start <T-XXXX> [--agent <name>]` | Claims the task and locks its modules; fails if another agent holds them. `MWP_AGENT` is the default name | Set `status: in_progress` |
+| `mwp task close <T-XXXX>` | Sets `status: done`, moves the file to `tasks/done/`, frees the locks, runs lint. Refuses an empty `## Closure` | Set the status, move the file, check by reading |
+| `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Gives the task back without closing it and frees its locks | Set the status |
+| `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title, external codes and the agent on each task in progress | List `mwp/tasks/open/` |
+| `mwp locks` | Tasks in progress, their agents and the modules they lock | Read the `in_progress` tasks |
 | `mwp next <T\|SP\|ADR\|TEST> [--reserve]` | Next free ID from MWP docs, module test folders and the ledger | Highest existing ID with that prefix, plus one |
-| `mwp context <T-XXXX \| code> [--paths]` | Files the task loads, with a token estimate; `MISSING` for broken references | Constitution + task + files in its front matter |
+| `mwp context <T-XXXX \| code> [--paths \| --cat]` | Files the task loads, with a token estimate; `--cat` prints their contents; `MISSING` for broken references | Constitution + task + files in its front matter |
 | `mwp adr new <title> [--modules a,b] [--supersedes ADR-XXXX]` / `mwp adr list [--status <s>]` | Creates a proposed ADR / lists ADRs | Copy `decisions/_template.md` |

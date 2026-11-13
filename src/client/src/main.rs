@@ -1,55 +1,52 @@
-mod doc;
-mod lint;
+//! The `mwp` command line: parses arguments, calls the core, prints the result.
 
-use doc::{id_num, map_texts, next_id, render_map, reserve, set_field, slug, today, Doc, Project, PREFIXES};
+use mwp_core::doc::{id_num, map_texts, next_id, render_map, Doc, Project, PREFIXES};
+use mwp_core::scaffold::{parse_agents, AGENTS};
+use mwp_core::{lint, ops, scaffold, state};
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::process::ExitCode;
-
-// shortcut: templates are embedded from the repo, so `cargo install` must run from a checkout.
-const TEMPLATES: &[(&str, &str)] = &[
-    ("AGENTS.md", include_str!("../../../templates/AGENTS.md")),
-    ("CLAUDE.md", include_str!("../../../templates/CLAUDE.md")),
-    ("mwp/PROJECT.md", include_str!("../../../templates/mwp/PROJECT.md")),
-    ("mwp/constitution.md", include_str!("../../../templates/mwp/constitution.md")),
-    ("mwp/map.md", include_str!("../../../templates/mwp/map.md")),
-    ("mwp/glossary.md", include_str!("../../../templates/mwp/glossary.md")),
-    ("mwp/modules/README.md", include_str!("../../../templates/mwp/modules/README.md")),
-    ("mwp/modules/_template.md", include_str!("../../../templates/mwp/modules/_template.md")),
-    ("mwp/tasks/open/.gitkeep", ""),
-    ("mwp/tasks/open/_template-task.md", include_str!("../../../templates/mwp/tasks/open/_template-task.md")),
-    ("mwp/tasks/open/_template-task-s.md", include_str!("../../../templates/mwp/tasks/open/_template-task-s.md")),
-    ("mwp/tasks/done/.gitkeep", ""),
-    ("mwp/specs/_template.md", include_str!("../../../templates/mwp/specs/_template.md")),
-    ("mwp/decisions/_template.md", include_str!("../../../templates/mwp/decisions/_template.md")),
-    ("mwp/content/.gitkeep", ""),
-    (".claude/skills/mwp/SKILL.md", include_str!("../../skill/mwp/SKILL.md")),
-    (".claude/skills/module/SKILL.md", include_str!("../../skill/module/SKILL.md")),
-];
 
 const USAGE: &str = "mwp — Module Work Plan
 
 Usage: mwp <command> [options]
 
-  init [dir] [--name <name>] [--no-skill]   Create mwp/, AGENTS.md, CLAUDE.md and the skills; never overwrites
+Project
+  init [dir] [--agent a,b] [--name <name>] [--no-skill]
+                                            Create mwp/ and the files of each agent; asks which agents
+                                            (claude, codex, cursor, gemini, copilot; default claude). Never overwrites
   lint [--strict]                           Check the project; --strict also fails on warnings
   map [--write | --check]                   Print the module map; --write updates map.md, --check fails if stale
   remap [--dry-run]                         Recheck modules (paths, dependencies, tests) and update map.md
+
+Tasks
   task new <title> [--size S|M|L] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]
                                             Create an open task from the template with the next T- ID
+  task start <T-XXXX> [--agent <name>]      Claim the task and lock its modules; fails if another agent holds them
+  task close <T-XXXX>                       Set done, move to tasks/done/, free the locks, run lint
+  task release <T-XXXX> [--status open|blocked|review]
+                                            Give the task back without closing it (default: open)
   task-list [--status <s>] [--module <id>] [--all]
                                             List tasks (open by default; --all includes done)
+  locks                                     Tasks in progress, their agents and locked modules
+  context <T-XXXX | external code> [--paths | --cat]
+                                            Files an agent reads for a task, with token estimate; --cat prints them
+
+IDs and decisions
   next <T|SP|ADR|TEST> [--reserve]          Next free ID; --reserve records it in .mwp/ledger.json
-  context <T-XXXX | external code> [--paths]
-                                            Files an agent reads for a task, with token estimate
   adr new <title> [--modules a,b] [--supersedes ADR-XXXX]
                                             Create a proposed ADR (and mark the old one superseded)
   adr list [--status <s>]                   List ADRs
+
+Environment
+  MWP_AGENT       Default for --agent in `task start`
+  MWP_STATE_DIR   Folder for the ledger and locks, when several checkouts of one project share them
 ";
 
 /// Flags that take a value; every other `--x` is a switch.
-const VALUED: [&str; 9] = ["--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external"];
+const VALUED: [&str; 10] = ["--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external", "--agent"];
 
 struct Args {
     pos: Vec<String>,
@@ -82,25 +79,23 @@ impl Args {
 
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
-    let Some(cmd) = raw.first() else {
+    // `--help` anywhere shows the usage: agents try `mwp task new --help`.
+    if raw.is_empty() || raw.iter().any(|a| a == "--help" || a == "-h" || a == "help") {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
-    };
+    }
     let rest = &raw[1..];
-    let result = match cmd.as_str() {
-        "init" => Args::parse(rest, &["--name", "--no-skill"]).and_then(|a| init(&a)),
+    let result = match raw[0].as_str() {
+        "init" => Args::parse(rest, &["--name", "--agent", "--no-skill"]).and_then(|a| init(&a)),
         "lint" => Args::parse(rest, &["--strict"]).and_then(|a| lint_cmd(&a)),
         "map" => Args::parse(rest, &["--write", "--check"]).and_then(|a| map(&a)),
         "remap" => Args::parse(rest, &["--dry-run"]).and_then(|a| remap(&a)),
-        "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all"]).and_then(|a| task(&a)),
+        "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all", "--agent"]).and_then(|a| task(&a)),
         "task-list" => Args::parse(rest, &["--status", "--module", "--all"]).and_then(|a| task_list(&a)),
+        "locks" => locks(),
         "next" => Args::parse(rest, &["--reserve"]).and_then(|a| next(&a)),
-        "context" => Args::parse(rest, &["--paths"]).and_then(|a| context(&a)),
+        "context" => Args::parse(rest, &["--paths", "--cat"]).and_then(|a| context(&a)),
         "adr" => Args::parse(rest, &["--modules", "--supersedes", "--status"]).and_then(|a| adr(&a)),
-        "-h" | "--help" | "help" => {
-            print!("{USAGE}");
-            Ok(true)
-        }
         "-V" | "--version" => {
             println!("mwp {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
@@ -119,27 +114,47 @@ fn main() -> ExitCode {
 
 type Res = Result<bool, String>;
 
+fn show(lines: ops::Lines) -> Res {
+    for l in lines? {
+        println!("{l}");
+    }
+    Ok(true)
+}
+
+fn ask(question: &str) -> String {
+    print!("{question}");
+    let _ = io::stdout().flush();
+    let mut answer = String::new();
+    let _ = io::stdin().read_line(&mut answer);
+    answer.trim().to_string()
+}
+
 fn init(a: &Args) -> Res {
     let dir = Path::new(a.pos.first().map_or(".", String::as_str));
-    for (path, content) in TEMPLATES {
-        if a.has("--no-skill") && path.starts_with(".claude/") {
-            continue;
+    // Questions only for a person at a terminal; an agent or a script gets the defaults.
+    let interactive = io::stdin().is_terminal();
+    let agents = match a.get("--agent") {
+        Some(v) => v.to_string(),
+        None if interactive => {
+            println!("Which agents will work on this project?");
+            for (i, ag) in AGENTS.iter().enumerate() {
+                println!("  {}. {:<8} {}", i + 1, ag.id, ag.name);
+            }
+            ask("Numbers or names, separated by commas; `all` for every one [claude]: ")
         }
-        let target = dir.join(path);
-        if target.exists() {
-            println!("skip   {path} (exists)");
-            continue;
+        None => String::new(),
+    };
+    let agents = parse_agents(&agents)?;
+    let name = match a.get("--name") {
+        Some(n) => Some(n.to_string()),
+        None if interactive && !dir.join("mwp/PROJECT.md").exists() => {
+            let folder = std::path::absolute(dir).ok().and_then(|p| p.file_name().map(|f| f.to_string_lossy().into_owned())).unwrap_or_default();
+            let n = ask(&format!("Project name [{folder}]: "));
+            Some(if n.is_empty() { folder } else { n })
         }
-        let content = match a.get("--name") {
-            Some(n) if *path == "mwp/PROJECT.md" => content.replace("<Project name>", n),
-            _ => content.to_string(),
-        };
-        fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
-        fs::write(&target, content).map_err(|e| format!("{path}: {e}"))?;
-        println!("create {path}");
-    }
-    println!("\nNext: fill mwp/PROJECT.md and the <placeholders> in mwp/constitution.md.");
-    Ok(true)
+        None => None,
+    };
+    show(scaffold::init(dir, name.as_deref().filter(|n| !n.is_empty()), &agents, !a.has("--no-skill")))
 }
 
 fn lint_cmd(a: &Args) -> Res {
@@ -192,6 +207,30 @@ fn by_num(mut docs: Vec<&Doc>) -> Vec<&Doc> {
     docs
 }
 
+fn task(a: &Args) -> Res {
+    let sub = a.pos.first().map(String::as_str);
+    let id = || a.pos.get(1).map(String::as_str).ok_or(format!("usage: mwp task {} <T-XXXX>", sub.unwrap_or("")));
+    match sub {
+        Some("list") => task_list(a),
+        Some("new") => {
+            let fields = ["modules", "reads", "refs", "external"].map(|f| (f, a.get(&format!("--{f}"))));
+            show(ops::task_new(&Project::find()?, &a.pos[1..].join(" "), a.get("--size").unwrap_or("M"), &fields))
+        }
+        Some("start") => {
+            let agent = a.get("--agent").map(String::from).or_else(|| std::env::var("MWP_AGENT").ok()).filter(|s| !s.trim().is_empty());
+            show(ops::task_start(&Project::find()?, id()?, agent.as_deref().unwrap_or("agent").trim()))
+        }
+        Some("close") => {
+            let (lines, report) = ops::task_close(&Project::find()?, id()?)?;
+            show(Ok(lines))?;
+            report.print();
+            Ok(report.errors.is_empty())
+        }
+        Some("release") => show(ops::task_release(&Project::find()?, id()?, a.get("--status").unwrap_or("open"))),
+        _ => Err("usage: mwp task <new|list|start|close|release> ...".into()),
+    }
+}
+
 fn task_list(a: &Args) -> Res {
     let p = Project::find()?;
     let tasks = by_num(p.of_kind("task")
@@ -202,10 +241,25 @@ fn task_list(a: &Args) -> Res {
     for t in &tasks {
         let ext = t.list("external");
         let ext = if ext.is_empty() { String::new() } else { format!(" [{}]", ext.join(", ")) };
-        println!("{:<8} {:<12} {:<2} {}{ext}", t.id(), t.get("status"), t.get("size"), t.title());
+        let agent = if t.get("status") == "in_progress" && !t.get("agent").is_empty() { format!(" @{}", t.get("agent")) } else { String::new() };
+        println!("{:<8} {:<12} {:<2} {}{ext}{agent}", t.id(), t.get("status"), t.get("size"), t.title());
     }
     if tasks.is_empty() {
         println!("no tasks");
+    }
+    Ok(true)
+}
+
+fn locks() -> Res {
+    let p = Project::find()?;
+    let locks = state::locks(&p.state);
+    let claims = state::claims(&p.state);
+    for c in &claims {
+        let modules: Vec<&str> = locks.iter().filter(|l| l.1.task == c.task).map(|l| l.0.as_str()).collect();
+        println!("{:<8} {:<12} {}", c.task, c.agent, if modules.is_empty() { "-".into() } else { modules.join(", ") });
+    }
+    if claims.is_empty() {
+        println!("no tasks in progress");
     }
     Ok(true)
 }
@@ -216,19 +270,15 @@ fn next(a: &Args) -> Res {
         return Err(format!("prefix must be one of {}", PREFIXES.join(", ")));
     }
     let p = Project::find()?;
-    let n = next_id(&p, prefix);
-    if a.has("--reserve") {
-        reserve(&p.root, prefix, n).map_err(|e| e.to_string())?;
-    }
+    let n = if a.has("--reserve") { state::allocate(&p, prefix).map_err(|e| e.to_string())? } else { next_id(&p, prefix) };
     println!("{prefix}-{n:04}");
     Ok(true)
 }
 
 fn context(a: &Args) -> Res {
-    let key = a.pos.first().ok_or("usage: mwp context <T-XXXX | external code> [--paths]")?;
+    let key = a.pos.first().ok_or("usage: mwp context <T-XXXX | external code> [--paths | --cat]")?;
     let p = Project::find()?;
-    let task = p.of_kind("task").find(|t| t.id() == key || t.list("external").contains(key))
-        .ok_or(format!("no task with id or external code `{key}`"))?;
+    let task = ops::find_task(&p, key)?;
 
     let mut files = vec![("always", p.mwp.join("constitution.md")), ("always", task.path.clone())];
     let mut missing = Vec::new();
@@ -244,14 +294,17 @@ fn context(a: &Args) -> Res {
     for (label, path) in &files {
         if a.has("--paths") {
             println!("{}", p.rel(path));
-            continue;
+        } else if a.has("--cat") {
+            // For agents without skills: the whole context in one stream.
+            println!("<!-- file: {} -->\n{}", p.rel(path), mwp_core::doc::read(path).unwrap_or_default());
+        } else {
+            // shortcut: ~4 bytes per token, good enough to spot an oversized task.
+            let tokens = fs::metadata(path).map(|m| m.len() / 4).unwrap_or(0);
+            total += tokens;
+            println!("{:<55} {:>7}  {label}", p.rel(path), tokens);
         }
-        // shortcut: ~4 bytes per token, good enough to spot an oversized task.
-        let tokens = fs::metadata(path).map(|m| m.len() / 4).unwrap_or(0);
-        total += tokens;
-        println!("{:<55} {:>7}  {label}", p.rel(path), tokens);
     }
-    if !a.has("--paths") {
+    if !a.has("--paths") && !a.has("--cat") {
         println!("{:<55} {:>7}  tokens (estimate)", "total", total);
     }
     for m in &missing {
@@ -269,96 +322,7 @@ fn adr(a: &Args) -> Res {
             }
             Ok(true)
         }
-        Some("new") => {
-            let title = a.pos[1..].join(" ");
-            if title.trim().is_empty() {
-                return Err("usage: mwp adr new <title> [--modules a,b] [--supersedes ADR-XXXX]".into());
-            }
-            let old = match a.get("--supersedes") {
-                Some(id) => Some(p.by_id("adr", id).ok_or(format!("no adr `{id}`"))?),
-                None => None,
-            };
-            let n = next_id(&p, "ADR");
-            let id = format!("ADR-{n:04}");
-            let date = today();
-            let template = template("mwp/decisions/_template.md");
-            let text = template.replace("id: <ADR-XXXX>", &format!("id: {id}")).replace("# <ADR-XXXX> — <Title>", &format!("# {id} — {}", title.trim()))
-                .replace("<YYYY-MM-DD>", &date)
-                .replace("modules: []", &format!("modules: {}", list_arg(a.get("--modules"))))
-                .replace("supersedes: []", &format!("supersedes: {}", list_arg(a.get("--supersedes"))));
-            let path = p.mwp.join("decisions").join(format!("{id}-{}.md", slug(&title)));
-            fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-            fs::write(&path, text).map_err(|e| e.to_string())?;
-            reserve(&p.root, "ADR", n).map_err(|e| e.to_string())?;
-            println!("create {} (status: proposed)", p.rel(&path));
-            if let Some(old) = old {
-                let t = doc::read(&old.path).ok_or("cannot read the superseded ADR")?;
-                let t = set_field(&set_field(&set_field(&t, "status", "superseded"), "superseded_by", &id), "date", &date);
-                fs::write(&old.path, t).map_err(|e| e.to_string())?;
-                println!("update {} (status: superseded, superseded_by: {id})", p.rel(&old.path));
-            }
-            Ok(true)
-        }
+        Some("new") => show(ops::adr_new(&p, &a.pos[1..].join(" "), a.get("--modules"), a.get("--supersedes"))),
         _ => Err("usage: mwp adr <new|list> ...".into()),
     }
-}
-
-fn template(path: &str) -> &'static str {
-    TEMPLATES.iter().find(|t| t.0 == path).unwrap().1
-}
-
-/// `a, b` from the command line as a front matter list: `[a, b]`.
-fn list_arg(v: Option<&str>) -> String {
-    format!("[{}]", v.unwrap_or("").split(',').map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", "))
-}
-
-fn task(a: &Args) -> Res {
-    match a.pos.first().map(String::as_str) {
-        Some("list") => task_list(a),
-        Some("new") => task_new(a),
-        _ => Err("usage: mwp task <new|list> ...".into()),
-    }
-}
-
-fn task_new(a: &Args) -> Res {
-    let title = a.pos[1..].join(" ");
-    if title.trim().is_empty() {
-        return Err("usage: mwp task new <title> [--size S|M|L] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]".into());
-    }
-    let size = a.get("--size").unwrap_or("M");
-    if !["S", "M", "L"].contains(&size) {
-        return Err("--size must be S, M or L".into());
-    }
-    let p = Project::find()?;
-    for (flag, kind) in [("--modules", "module"), ("--reads", "module"), ("--refs", "task")] {
-        for id in doc::parse_list(&list_arg(a.get(flag))) {
-            if p.by_id(kind, &id).is_none() {
-                eprintln!("warning: {flag} cites `{id}`, no {kind} has that id");
-            }
-        }
-    }
-    let n = next_id(&p, "T");
-    let id = format!("T-{n:04}");
-    let mut text = template(if size == "S" { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })
-        .replace("id: <T-XXXX>", &format!("id: {id}"))
-        .replace("# <T-XXXX> — <Title>", &format!("# {id} — {}", title.trim()))
-        .replace("created: <YYYY-MM-DD>", &format!("created: {}", today()))
-        .replace("size: M ", &format!("size: {size} "));
-    if !text.contains("\ncreated:") {
-        text = set_field(&text, "created", &today()); // the S template has no `created:`
-    }
-    for f in ["modules", "reads", "refs", "external"] {
-        let v = list_arg(a.get(&format!("--{f}")));
-        if text.contains(&format!("{f}: []")) {
-            text = text.replace(&format!("{f}: []"), &format!("{f}: {v}"));
-        } else if v != "[]" {
-            text = set_field(&text, f, &v);
-        }
-    }
-    let path = p.mwp.join("tasks").join("open").join(format!("{id}-{}.md", slug(&title)));
-    fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
-    fs::write(&path, text).map_err(|e| e.to_string())?;
-    reserve(&p.root, "T", n).map_err(|e| e.to_string())?;
-    println!("create {} (size {size}, status: open)", p.rel(&path));
-    Ok(true)
 }

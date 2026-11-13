@@ -21,6 +21,7 @@
 - Adding a dependency without recording and justifying it in the task.
 - Writing modules not listed in `modules:`.
 - Editing a task in `tasks/done/`.
+- Working on a task another agent holds, or writing a module locked by another task (`mwp locks`).
 - Editing the body of an accepted ADR, except `## Amendments` entries for factual corrections.
 - Changing or removing an existing TEST unless the task lists it in `modifies_tests:`.
 - Checking a criterion without evidence.

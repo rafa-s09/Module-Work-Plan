@@ -1,4 +1,4 @@
-//! MWP files: front matter, project scan, IDs, ledger and the module map.
+//! MWP files: front matter, project scan, IDs and the module map.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -112,6 +112,8 @@ pub fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 pub struct Project {
     pub root: PathBuf,
     pub mwp: PathBuf,
+    /// Where the ledger, claims and locks live (see `state::dir`).
+    pub state: PathBuf,
     pub docs: Vec<Doc>,
 }
 
@@ -120,9 +122,16 @@ impl Project {
     pub fn find() -> Result<Project, String> {
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
         let root = cwd.ancestors().find(|d| d.join("mwp").is_dir())
-            .ok_or("no mwp/ folder here or in a parent folder (run `mwp init`)")?
-            .to_path_buf();
-        let mwp = root.join("mwp");
+            .ok_or("no mwp/ folder here or in a parent folder (run `mwp init`)")?;
+        Project::open(root)
+    }
+
+    /// Loads the project whose `mwp/` folder is in `root`.
+    pub fn open(root: &Path) -> Result<Project, String> {
+        let (root, mwp) = (root.to_path_buf(), root.join("mwp"));
+        if !mwp.is_dir() {
+            return Err(format!("no mwp/ folder in {}", root.display()));
+        }
         let mut files = Vec::new();
         walk(&mwp, &mut files);
         files.sort();
@@ -134,7 +143,8 @@ impl Project {
             .filter(|p| !p.file_name().unwrap().to_string_lossy().starts_with('_'))
             .filter_map(|p| Doc::load(p))
             .collect();
-        Ok(Project { root, mwp, docs })
+        let state = crate::state::dir(&root);
+        Ok(Project { root, mwp, state, docs })
     }
     pub fn of_kind<'a>(&'a self, kind: &'a str) -> impl Iterator<Item = &'a Doc> + 'a {
         self.docs.iter().filter(move |d| d.kind() == kind)
@@ -182,7 +192,7 @@ pub fn next_id(p: &Project, prefix: &str) -> u64 {
         files.extend(test_files(p, m));
     }
     let used = files.iter().filter_map(|f| read(f)).flat_map(|t| ids_in(&t, prefix).collect::<Vec<_>>()).max().unwrap_or(0);
-    used.max(read_ledger(&p.root).get(prefix).copied().unwrap_or(0)) + 1
+    used.max(crate::state::read_ledger(&p.state).get(prefix).copied().unwrap_or(0)) + 1
 }
 
 /// Every file under a module's `tests:` paths.
@@ -193,28 +203,6 @@ pub fn test_files(p: &Project, m: &Doc) -> Vec<PathBuf> {
         if path.is_file() { out.push(path) } else { walk(&path, &mut out) }
     }
     out
-}
-
-fn ledger_path(root: &Path) -> PathBuf {
-    root.join(".mwp").join("ledger.json")
-}
-
-/// `.mwp/ledger.json`: last reserved number per prefix, so a deleted file never frees its ID.
-pub fn read_ledger(root: &Path) -> BTreeMap<String, u64> {
-    let text = read(&ledger_path(root)).unwrap_or_default();
-    text.trim().trim_start_matches('{').trim_end_matches('}').split(',')
-        .filter_map(|kv| kv.split_once(':'))
-        .filter_map(|(k, v)| Some((k.trim().trim_matches('"').to_string(), v.trim().parse().ok()?)))
-        .collect()
-}
-
-pub fn reserve(root: &Path, prefix: &str, n: u64) -> std::io::Result<()> {
-    let mut ledger = read_ledger(root);
-    let e = ledger.entry(prefix.to_string()).or_insert(0);
-    *e = (*e).max(n);
-    let body: Vec<String> = ledger.iter().map(|(k, v)| format!("  \"{k}\": {v}")).collect();
-    fs::create_dir_all(root.join(".mwp"))?;
-    fs::write(ledger_path(root), format!("{{\n{}\n}}\n", body.join(",\n")))
 }
 
 pub fn render_map(p: &Project) -> String {

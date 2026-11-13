@@ -44,8 +44,9 @@ const ENUMS: [(&str, &str, &[&str]); 6] = [
     ("module", "type", &["ui", "domain", "infra"]),
 ];
 
-/// Line limits from the format; over them is a warning, not an error.
-const LIMITS: [(&str, usize); 3] = [("project", 60), ("module", 200), ("task", 80)];
+/// Line limits, sized for large projects. Over them is always a warning, never an error.
+pub const LIMITS: [(&str, usize); 3] = [("project", 150), ("module", 500), ("task", 200)];
+pub const CONSTITUTION_LIMIT: usize = 300;
 
 pub fn lint(p: &Project) -> Report {
     let mut r = Report::default();
@@ -95,8 +96,8 @@ pub fn lint(p: &Project) -> Report {
     }
 
     if let Some(c) = read(&p.mwp.join("constitution.md")) {
-        if c.lines().count() > 150 {
-            r.warnings.push(format!("mwp/constitution.md: {} lines, limit is ~150", c.lines().count()));
+        if c.lines().count() > CONSTITUTION_LIMIT {
+            r.warnings.push(format!("mwp/constitution.md: {} lines, limit is ~{CONSTITUTION_LIMIT}", c.lines().count()));
         }
     } else {
         r.errors.push("mwp/constitution.md: missing".into());
@@ -143,7 +144,7 @@ fn check_task(p: &Project, d: &Doc, r: &mut Report) {
 }
 
 /// True if a section has text beyond `>` hints and empty `- **Label:**` lines.
-fn has_content(s: &str) -> bool {
+pub fn has_content(s: &str) -> bool {
     s.lines().map(str::trim).filter(|l| !l.starts_with('>')).any(|l| {
         let l = l.trim_start_matches("- ");
         let l = l.strip_prefix("**").and_then(|x| x.split_once(":**")).map_or(l, |(_, rest)| rest);
