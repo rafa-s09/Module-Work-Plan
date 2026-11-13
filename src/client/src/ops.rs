@@ -129,10 +129,10 @@ pub fn refresh_map(root: &Path) -> String {
     }
 }
 
-/// A folder under `mwp/modules/`, given as `a/b`; empty is `mwp/modules/` itself.
-/// Each part is lowercase words joined by `-`, so nothing can point outside the folder.
-fn modules_dir(p: &Project, folder: &str) -> Result<PathBuf, String> {
-    let mut dir = p.mwp.join("modules");
+/// A folder under `mwp/<area>/` (`modules` or `content`), given as `a/b`; empty is the area itself.
+/// Each part is lowercase words joined by `-`, so nothing can point outside the area.
+fn area_dir(p: &Project, area: &str, folder: &str) -> Result<PathBuf, String> {
+    let mut dir = p.mwp.join(area);
     for part in folder.split(['/', '\\']).filter(|s| !s.is_empty()) {
         if slug(part) != part {
             return Err(format!("folder `{part}`: use lowercase words joined by `-`"));
@@ -142,18 +142,53 @@ fn modules_dir(p: &Project, folder: &str) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Creates a folder for modules inside `parent` (a folder under `mwp/modules/`, empty for the top).
-pub fn module_folder_new(p: &Project, parent: &str, name: &str) -> Lines {
+fn modules_dir(p: &Project, folder: &str) -> Result<PathBuf, String> {
+    area_dir(p, "modules", folder)
+}
+
+fn folder_new(p: &Project, area: &str, parent: &str, name: &str) -> Lines {
     let name = name.trim();
     if name.is_empty() || slug(name) != name {
         return Err("the folder name is lowercase words joined by `-`, like `billing`".into());
     }
-    let dir = modules_dir(p, parent)?.join(name);
+    let dir = area_dir(p, area, parent)?.join(name);
     if dir.exists() {
         return Err(format!("{} already exists", p.rel(&dir)));
     }
     fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", p.rel(&dir)))?;
     Ok(vec![format!("create {}/", p.rel(&dir))])
+}
+
+/// Creates a folder for modules inside `parent` (a folder under `mwp/modules/`, empty for the top).
+pub fn module_folder_new(p: &Project, parent: &str, name: &str) -> Lines {
+    folder_new(p, "modules", parent, name)
+}
+
+/// Creates a folder for resources inside `parent` (a folder under `mwp/content/`, empty for the top).
+pub fn content_folder_new(p: &Project, parent: &str, name: &str) -> Lines {
+    folder_new(p, "content", parent, name)
+}
+
+/// Copies files into `mwp/content/<folder>`. Never overwrites: a name already there is skipped
+/// and reported (`skip ...`), so a resource is never replaced by accident.
+pub fn content_add(p: &Project, folder: &str, files: &[PathBuf]) -> Lines {
+    let dir = area_dir(p, "content", folder)?;
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", p.rel(&dir)))?;
+    let mut lines = Vec::new();
+    for f in files {
+        let Some(name) = f.file_name().filter(|_| f.is_file()) else {
+            lines.push(format!("skip {}: not a file", f.display()));
+            continue;
+        };
+        let dest = dir.join(name);
+        if dest.exists() {
+            lines.push(format!("skip {}: already exists", p.rel(&dest)));
+            continue;
+        }
+        fs::copy(f, &dest).map_err(|e| format!("{}: {e}", f.display()))?;
+        lines.push(format!("add {}", p.rel(&dest)));
+    }
+    Ok(lines)
 }
 
 /// Creates a module from the template in `folder` (under `mwp/modules/`, empty for the top) and adds it
@@ -205,16 +240,19 @@ pub fn spec_new(p: &Project, title: &str, owner: &str, lifetime: &str) -> Lines 
     Ok(vec![format!("create {} (status: active, owner: {owner})", p.rel(&path))])
 }
 
-/// What may be deleted: modules, specs and tasks not done yet. Templates (`_*`) stay.
+/// What may be deleted: modules, specs, tasks not done yet and content files. Templates (`_*`) stay.
 pub fn deletable(p: &Project, path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if path.starts_with(p.mwp.join("content")) {
+        return path.is_file() && name != ".gitkeep"; // resources of any type
+    }
     name.ends_with(".md") && !name.starts_with('_') && ["modules", "specs", "tasks/open"].iter().any(|d| path.starts_with(p.mwp.join(d)))
 }
 
 /// Deletes a module, a spec or an open task. A task's claim and locks are freed; `map.md` follows the modules.
 pub fn delete(p: &Project, path: &Path) -> Lines {
     if !deletable(p, path) {
-        return Err(format!("{} cannot be deleted: only modules, specs and open tasks can", p.rel(path)));
+        return Err(format!("{} cannot be deleted: only modules, specs, open tasks and content files can", p.rel(path)));
     }
     let doc = p.docs.iter().find(|d| d.path == path);
     fs::remove_file(path).map_err(|e| format!("{}: {e}", p.rel(path)))?;
@@ -326,6 +364,21 @@ mod tests {
         assert!(read(&root.join("mwp/map.md")).unwrap().contains("| vat | domain | VAT rules |"));
         delete(&open(), &root.join("mwp/modules/billing/tax/vat.md")).unwrap();
         fs::remove_dir_all(root.join("mwp/modules/billing")).unwrap();
+
+        // Content: files of any type are copied in, never over an existing one, and can be deleted.
+        let src = root.join("logo.png");
+        fs::write(&src, [137u8, 80, 78, 71]).unwrap();
+        content_folder_new(&open(), "", "icons").unwrap();
+        assert!(content_folder_new(&open(), "", "../x").is_err());
+        let lines = content_add(&open(), "icons", &[src.clone(), root.join("missing.png")]).unwrap();
+        assert_eq!(lines, ["add mwp/content/icons/logo.png", &format!("skip {}: not a file", root.join("missing.png").display())]);
+        fs::write(&src, b"new").unwrap();
+        assert_eq!(content_add(&open(), "icons", &[src]).unwrap(), ["skip mwp/content/icons/logo.png: already exists"]);
+        let logo = root.join("mwp/content/icons/logo.png");
+        assert_eq!(fs::read(&logo).unwrap(), [137u8, 80, 78, 71], "never overwritten");
+        assert!(!deletable(&open(), &root.join("mwp/content/.gitkeep")));
+        delete(&open(), &logo).unwrap();
+        assert!(!logo.exists());
         assert!(read(&root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
         assert!(!lint(&open()).errors.iter().any(|e| e.contains("map.md") || e.contains("user-auth")), "{:?}", lint(&open()).errors);
         // A SPEC needs an owner that exists; the new one passes lint.

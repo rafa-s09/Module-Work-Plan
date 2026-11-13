@@ -379,13 +379,21 @@ Creates an active SPEC in `specs/` with the next SP- ID.
 | `--owner <module \| T-XXXX>` | (required) The module or task the SPEC belongs to |
 | `--lifetime durable\|transient` | Default `durable` |
 
-### `mwp delete <id>`
+### `mwp delete <id | path>`
 
-Deletes a module, a SPEC or a task that is not done (done tasks are history and stay). A task's claim and locks are freed; deleting a module updates `map.md`. Tasks can also be named by their external code.
+Deletes a module, a SPEC or a task that is not done (done tasks are history and stay), or a file in `content/` given by its path. A task's claim and locks are freed; deleting a module updates `map.md`. Tasks can also be named by their external code.
 
 | Option | Effect |
 |---|---|
 | `--yes` | Deletes without asking. Required when not run from a terminal, so an agent or a script never deletes by accident |
+
+### `mwp content add <file>...` / `mwp content folder <a/b>`
+
+`content add` copies files into `mwp/content/`. A file whose name is already there is skipped and reported, never replaced; the exit code is 1 when any was skipped. `content folder` creates a folder there (folder names follow the ID rule).
+
+| Option | Effect |
+|---|---|
+| `--folder a/b` | (`add`) Copies into `content/a/b/` |
 
 ### `mwp remap`
 

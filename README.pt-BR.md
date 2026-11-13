@@ -87,7 +87,8 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 | `mwp adr new` / `mwp adr list` | Cria um ADR proposto (podendo substituir outro) / lista os ADRs |
 | `mwp module new` / `mwp module folder` | Cria um módulo (podendo ser numa subpasta) e atualiza o `map.md` / cria uma pasta para módulos |
 | `mwp spec new` | Cria uma SPEC ativa, com um módulo ou uma task como dono |
-| `mwp delete <id>` | Apaga um módulo, uma SPEC ou uma task não concluída, depois de confirmar (`--yes` pula a pergunta) |
+| `mwp delete <id>` | Apaga um módulo, uma SPEC, uma task não concluída ou um arquivo de content, depois de confirmar (`--yes` pula a pergunta) |
+| `mwp content add` / `mwp content folder` | Copia arquivos para `mwp/content/` sem substituir nenhum / cria uma pasta lá |
 | `mwp remap` | Reverifica os módulos e regenera o `map.md` |
 | `mwp map` | Imprime, grava ou confere o mapa de módulos |
 | `mwp lint` | Verifica o projeto inteiro; código de saída 1 se houver erros |
@@ -101,6 +102,7 @@ O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o traba
 - **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos com suas subpastas, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas; o botão direito em Modules ou numa pasta cria ali um módulo ou uma pasta), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
 - **Editor de Markdown** com abas: código com destaque e números de linha, barra de formatação (títulos, negrito, itálico, código, listas, checklists, citações, links) e preview ao vivo, lado a lado ou sozinho. O front matter aparece como tabela de propriedades no preview.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), os comandos padrão do **Edit** (desfazer, refazer, recortar, copiar, colar, selecionar tudo) e um aviso antes de perder alterações não salvas. Quando um agente altera um arquivo que você está editando, uma barra pergunta se fica a sua edição ou a versão do disco; o salvamento espera a resposta, para nenhuma das duas se perder.
+- **Content**: os recursos de `mwp/content/` com suas pastas. Adicione arquivos pelo **+**, pelo botão direito numa pasta ou arrastando-os para a janela (um arquivo existente nunca é substituído); o botão direito num arquivo abre no app dele, mostra na pasta, copia o caminho para citar numa task ou apaga.
 - **Quadro** das tasks por status; um cartão abre a task. **Start**, **Status** e **Close** (cabeçalho da task, ou botão direito num cartão) fazem o mesmo que `mwp task start`, `release` e `close`: reserva e locks dos módulos, a mudança para `tasks/done/`, a conferência do `## Closure`.
 - **Problemas** do `mwp lint`; uma linha abre o arquivo. Um `map.md` desatualizado ganha o botão **Update map.md**, como o `mwp remap`.
 - **New task**, **New module**, **New SPEC** e **New ADR** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`, uma SPEC recebe um módulo ou uma task como dono e um ADR pode substituir outro em vigor.

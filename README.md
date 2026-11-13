@@ -87,7 +87,8 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 | `mwp adr new` / `mwp adr list` | Creates a proposed ADR (optionally superseding one) / lists ADRs |
 | `mwp module new` / `mwp module folder` | Creates a module (optionally in a subfolder) and updates `map.md` / creates a folder for modules |
 | `mwp spec new` | Creates an active SPEC owned by a module or task |
-| `mwp delete <id>` | Deletes a module, a SPEC or a task not done, after asking (`--yes` to skip) |
+| `mwp delete <id>` | Deletes a module, a SPEC, a task not done or a content file, after asking (`--yes` to skip) |
+| `mwp content add` / `mwp content folder` | Copies files into `mwp/content/` without replacing any / creates a folder there |
 | `mwp remap` | Rechecks modules and regenerates `map.md` |
 | `mwp map` | Prints, writes or checks the module map |
 | `mwp lint` | Checks the whole project; exit code 1 on errors |
@@ -101,6 +102,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **Explorer** of the `mwp/` files by section (project, modules with their subfolders, SPECs, ADRs, then tasks split into open and done; right-click Modules or a folder to add a module or a folder there), with broken files in red, and the agents at work with the modules they lock.
 - **Markdown editor** with tabs: highlighted source with line numbers, a formatting toolbar (headings, bold, italic, code, lists, checklists, quotes, links) and a live preview, side by side or alone. The front matter shows as a property table in the preview.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), the standard **Edit** commands (undo, redo, cut, copy, paste, select all), and a prompt before unsaved changes are lost. When an agent changes a file you are editing, a bar asks whether to keep your edits or the disk version; saving waits for the answer, so neither is lost.
+- **Content**: the resources in `mwp/content/` with their folders. Add files with **+**, right-click a folder or by dropping them on the window (an existing file is never replaced); right-click a file to open it in its app, show it in the folder, copy its path for a task, or delete it.
 - **Board** of the tasks by status; a card opens the task. **Start**, **Status** and **Close** (task header, or right-click a card) do what `mwp task start`, `release` and `close` do: claims and module locks, the move to `tasks/done/`, the `## Closure` check.
 - **Problems** from `mwp lint`; a line opens the file. A stale `map.md` gets an **Update map.md** button, like `mwp remap`.
 - **New task**, **New module**, **New SPEC** and **New ADR** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`, a SPEC gets a module or task as its owner, an ADR can replace one in force.

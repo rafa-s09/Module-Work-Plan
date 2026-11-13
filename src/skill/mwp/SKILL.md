@@ -82,7 +82,7 @@ To see what is pending: `mwp task-list` (or `mwp task list`): open tasks, `--sta
 
 ## Using resources (`mwp/content/`)
 
-`mwp/content/` is the default place for resources: icons, images, Figma files or exports, PDFs, reference documents, sample data. The folder is optional; the CLI ignores it.
+`mwp/content/` is the default place for resources: icons, images, Figma files or exports, PDFs, reference documents, sample data. The folder is optional; lint does not check it. `mwp content add <file>... [--folder icons]` copies files in without replacing any.
 
 - **Need a resource?** Look in `mwp/content/` first. List the folder to find it; never open everything.
 - **Open only what the task needs.** Binary files (images, `.fig`, PDFs) are referenced by path; open one only if you must inspect it.
@@ -136,4 +136,5 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 | `mwp module new <id> --summary <text> [--type domain\|ui\|infra] [--folder a/b]` | Creates a module from the template, optionally in a subfolder of `modules/`, and updates `map.md`. IDs are unique across folders | Copy `modules/_template.md`, then `mwp remap` |
 | `mwp module folder <a/b>` | Creates a folder for modules under `modules/` | Create the folder |
 | `mwp spec new <title> --owner <module\|T-XXXX> [--lifetime durable\|transient]` | Creates an active SPEC with the next SP- ID reserved | `mwp next SP --reserve` and copy `specs/_template.md` |
-| `mwp delete <module \| SP-XXXX \| T-XXXX> --yes` | Deletes a module, a SPEC or a task not done; frees the task's locks, updates `map.md`. Refuses without `--yes` outside a terminal. Only when the task or the user asks for it | Delete the file, `mwp task release` first for a task in progress |
+| `mwp delete <module \| SP-XXXX \| T-XXXX \| mwp/content/file> --yes` | Deletes a module, a SPEC, a task not done or a content file; frees the task's locks, updates `map.md`. Refuses without `--yes` outside a terminal. Only when the task or the user asks for it | Delete the file, `mwp task release` first for a task in progress |
+| `mwp content add <file>... [--folder a/b]` / `mwp content folder <a/b>` | Copies files into `content/` (never replaces one; exit 1 if any was skipped) / creates a folder there | Copy the files |

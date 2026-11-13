@@ -42,9 +42,13 @@ Modules and SPECs
   module folder <a/b>                       Create a folder for modules under mwp/modules/
   spec new <title> --owner <module|T-XXXX> [--lifetime durable|transient]
                                             Create an active SPEC with the next SP- ID (default durable)
-  delete <id> [--yes]                       Delete a module, a SPEC or a task not done; frees the task's locks
-                                            and updates map.md. Asks first; --yes skips the question (needed
-                                            when not run from a terminal)
+  delete <id | path> [--yes]                Delete a module, a SPEC, a task not done or a content file (by path);
+                                            frees the task's locks and updates map.md. Asks first; --yes skips
+                                            the question (needed when not run from a terminal)
+
+Resources (mwp/content/)
+  content add <file>... [--folder a/b]      Copy files into mwp/content/ (or a subfolder); never overwrites
+  content folder <a/b>                      Create a folder under mwp/content/
 
 IDs and decisions
   next <T|SP|ADR|TEST> [--reserve]          Next free ID; --reserve records it in .mwp/ledger.json
@@ -62,6 +66,7 @@ const VALUED: [&str; 15] = [
     "--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external", "--agent",
     "--summary", "--type", "--folder", "--owner", "--lifetime",
 ];
+// `--folder` is shared by `module new` and `content add`.
 
 struct Args {
     pos: Vec<String>,
@@ -114,6 +119,7 @@ fn main() -> ExitCode {
         "module" => Args::parse(rest, &["--summary", "--type", "--folder"]).and_then(|a| module(&a)),
         "spec" => Args::parse(rest, &["--owner", "--lifetime"]).and_then(|a| spec(&a)),
         "delete" => Args::parse(rest, &["--yes"]).and_then(|a| delete(&a)),
+        "content" => Args::parse(rest, &["--folder"]).and_then(|a| content(&a)),
         "-V" | "--version" => {
             println!("mwp {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
@@ -379,21 +385,43 @@ fn spec(a: &Args) -> Res {
     }
 }
 
-/// Deletes by ID: a module, a SPEC, or a task (also by its external code).
+/// Deletes by ID (a module, a SPEC, or a task, also by its external code) or by path (a content file).
 fn delete(a: &Args) -> Res {
-    let key = a.pos.first().ok_or("usage: mwp delete <module | SP-XXXX | T-XXXX> [--yes]")?;
+    let key = a.pos.first().ok_or("usage: mwp delete <module | SP-XXXX | T-XXXX | mwp/content/file> [--yes]")?;
     let p = Project::find()?;
-    let doc = p.docs.iter().find(|d| d.id() == key && ["module", "spec", "task"].contains(&d.kind())).or_else(|| ops::find_task(&p, key).ok())
-        .ok_or(format!("no module, SPEC or task with id `{key}`"))?;
+    let path = match p.docs.iter().find(|d| d.id() == key && ["module", "spec", "task"].contains(&d.kind())).or_else(|| ops::find_task(&p, key).ok()) {
+        Some(doc) => doc.path.clone(),
+        // Not an ID: a path, from the project root or from here.
+        None => [p.root.join(key), std::path::absolute(key).unwrap_or_default()].into_iter().find(|f| f.is_file())
+            .ok_or(format!("no module, SPEC, task or file `{key}`"))?,
+    };
     if !a.has("--yes") {
         // Deleting cannot be undone: a person confirms, an agent or a script must say --yes.
         if !io::stdin().is_terminal() {
-            return Err(format!("deleting {} cannot be undone; pass --yes", p.rel(&doc.path)));
+            return Err(format!("deleting {} cannot be undone; pass --yes", p.rel(&path)));
         }
-        if !matches!(ask(&format!("Delete {}? This cannot be undone [y/N]: ", p.rel(&doc.path))).to_lowercase().as_str(), "y" | "yes") {
+        if !matches!(ask(&format!("Delete {}? This cannot be undone [y/N]: ", p.rel(&path))).to_lowercase().as_str(), "y" | "yes") {
             println!("nothing deleted");
             return Ok(true);
         }
     }
-    show(ops::delete(&p, &doc.path))
+    show(ops::delete(&p, &path))
+}
+
+fn content(a: &Args) -> Res {
+    let p = Project::find()?;
+    match (a.pos.first().map(String::as_str), &a.pos[1.min(a.pos.len())..]) {
+        (Some("add"), files) if !files.is_empty() => {
+            let lines = ops::content_add(&p, a.get("--folder").unwrap_or(""), &files.iter().map(std::path::PathBuf::from).collect::<Vec<_>>())?;
+            let skipped = lines.iter().any(|l| l.starts_with("skip"));
+            show(Ok(lines))?;
+            Ok(!skipped)
+        }
+        (Some("folder"), [path]) => {
+            let path = path.trim_matches(['/', '\\']);
+            let (parent, name) = path.rsplit_once(['/', '\\']).unwrap_or(("", path));
+            show(ops::content_folder_new(&p, parent, name))
+        }
+        _ => Err("usage: mwp content add <file>... [--folder a/b]\n       mwp content folder <a/b>".into()),
+    }
 }

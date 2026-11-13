@@ -23,10 +23,12 @@ const REFRESH: Duration = Duration::from_secs(2);
 const COLUMNS: [(&str, &str); 5] = [("open", "Open"), ("in_progress", "In progress"), ("blocked", "Blocked"), ("review", "Review"), ("done", "Done")];
 const PROJECT_FILES: [&str; 4] = ["PROJECT.md", "constitution.md", "map.md", "glossary.md"];
 /// Explorer order. The two task folders are drawn last, as "Open" and "Done" under one "Tasks" group.
-const SECTIONS: [(&str, &str, MaterialIcon); 5] = [
+const SECTIONS: [(&str, &str, MaterialIcon); 6] = [
     ("Modules", "modules", ICON_EXTENSION),
     ("Specs", "specs", ICON_ARTICLE),
     ("Decisions", "decisions", ICON_GAVEL),
+    // Resources of any type, not MWP docs.
+    ("Content", "content", ICON_PERM_MEDIA),
     ("Open tasks", "tasks/open", ICON_TASK),
     ("Done tasks", "tasks/done", ICON_TASK_ALT),
 ];
@@ -79,15 +81,34 @@ struct View {
     claims: Vec<Claim>,
     locks: Vec<(String, Claim)>,
     tree: Vec<(&'static str, MaterialIcon, Vec<Entry>)>,
-    /// Every folder under mwp/modules/, parents before children, so empty ones show too.
-    module_dirs: Vec<PathBuf>,
+    /// Every folder under mwp/modules/ and mwp/content/, parents before children, so empty ones show too.
+    dirs: Vec<PathBuf>,
 }
 
 fn load(root: &Path) -> Result<View, String> {
     let project = Project::open(root)?;
-    let mut module_dirs = Vec::new();
-    subdirs(&project.mwp.join("modules"), &mut module_dirs);
-    Ok(View { report: lint(&project), claims: state::claims(&project.state), locks: state::locks(&project.state), tree: tree(&project), module_dirs, project })
+    let mut dirs = Vec::new();
+    for area in Area::ALL {
+        subdirs(&project.mwp.join(area.dir()), &mut dirs);
+    }
+    Ok(View { report: lint(&project), claims: state::claims(&project.state), locks: state::locks(&project.state), tree: tree(&project), dirs, project })
+}
+
+/// The explorer sections that keep their folders.
+#[derive(Clone, Copy, PartialEq)]
+enum Area {
+    Modules,
+    Content,
+}
+
+impl Area {
+    const ALL: [Area; 2] = [Area::Modules, Area::Content];
+    fn dir(self) -> &'static str {
+        match self {
+            Area::Modules => "modules",
+            Area::Content => "content",
+        }
+    }
 }
 
 fn subdirs(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -100,26 +121,32 @@ fn subdirs(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// A module folder as `a/b`, relative to mwp/modules/.
-fn rel_folder(modules: &Path, dir: &Path) -> String {
-    dir.strip_prefix(modules).map_or(String::new(), |r| r.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+/// A folder as `a/b`, relative to its area (mwp/modules/ or mwp/content/).
+fn rel_folder(area: &Path, dir: &Path) -> String {
+    dir.strip_prefix(area).map_or(String::new(), |r| r.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
 }
 
-/// What a module folder's context menu asked for. Folders are given as `a/b` under mwp/modules/.
+/// What a folder's context menu asked for. Folders are given as `a/b` under their area.
 enum FolderCmd {
     NewModule(String),
-    NewFolder(String),
+    /// Pick files and copy them into this content folder.
+    AddFiles(String),
+    NewFolder(Area, String),
     Remove(PathBuf),
 }
 
-/// The context menu of the Modules section and of each folder in it.
-fn folder_menu(ui: &mut egui::Ui, rel: &str, dir: Option<&Path>, cmd: &mut Option<FolderCmd>) {
-    if ui.button(ic(ICON_EXTENSION, "New module here…")).clicked() {
-        *cmd = Some(FolderCmd::NewModule(rel.to_string()));
+/// The context menu of the Modules and Content sections and of each folder in them.
+fn folder_menu(ui: &mut egui::Ui, area: Area, rel: &str, dir: Option<&Path>, cmd: &mut Option<FolderCmd>) {
+    let (icon, label, add) = match area {
+        Area::Modules => (ICON_EXTENSION, "New module here…", FolderCmd::NewModule(rel.to_string())),
+        Area::Content => (ICON_UPLOAD_FILE, "Add files here…", FolderCmd::AddFiles(rel.to_string())),
+    };
+    if ui.button(ic(icon, label)).clicked() {
+        *cmd = Some(add);
         ui.close();
     }
     if ui.button(ic(ICON_CREATE_NEW_FOLDER, "New folder…")).clicked() {
-        *cmd = Some(FolderCmd::NewFolder(rel.to_string()));
+        *cmd = Some(FolderCmd::NewFolder(area, rel.to_string()));
         ui.close();
     }
     if let Some(dir) = dir {
@@ -197,13 +224,14 @@ fn flat(ui: &mut egui::Ui, entries: &[Entry], files: &mut dyn FnMut(&mut egui::U
     }
 }
 
-/// The modules of `dir`: its subfolders first, each collapsible with a context menu, then its files.
-fn module_folder(ui: &mut egui::Ui, dir: &Path, modules: &Path, dirs: &[PathBuf], entries: &[&Entry], files: &mut dyn FnMut(&mut egui::Ui, &[&Entry]), cmd: &mut Option<FolderCmd>) {
+/// The files of `dir` in an area: its subfolders first, each collapsible with a context menu, then its files.
+#[allow(clippy::too_many_arguments)]
+fn folder_tree(ui: &mut egui::Ui, area: Area, dir: &Path, root: &Path, dirs: &[PathBuf], entries: &[&Entry], files: &mut dyn FnMut(&mut egui::Ui, &[&Entry]), cmd: &mut Option<FolderCmd>) {
     let subs: Vec<&PathBuf> = dirs.iter().filter(|d| d.parent() == Some(dir)).collect();
     for sub in &subs {
         let inside: Vec<&Entry> = entries.iter().filter(|e| e.path.starts_with(sub)).copied().collect();
-        let (_, header) = group(ui, ICON_FOLDER, &folder_name(sub), inside.len(), true, None, |ui| module_folder(ui, sub, modules, dirs, &inside, files, cmd));
-        header.context_menu(|ui| folder_menu(ui, &rel_folder(modules, sub), Some(sub), cmd));
+        let (_, header) = group(ui, ICON_FOLDER, &folder_name(sub), inside.len(), true, None, |ui| folder_tree(ui, area, sub, root, dirs, &inside, files, cmd));
+        header.context_menu(|ui| folder_menu(ui, area, &rel_folder(root, sub), Some(sub), cmd));
     }
     let here: Vec<&Entry> = entries.iter().filter(|e| e.path.parent() == Some(dir)).copied().collect();
     files(ui, &here);
@@ -228,7 +256,12 @@ fn tree(p: &Project) -> Vec<(&'static str, MaterialIcon, Vec<Entry>)> {
     for (label, dir, icon) in SECTIONS {
         let mut files = Vec::new();
         walk(&p.mwp.join(dir), &mut files);
-        files.retain(|f| f.extension().is_some_and(|e| e == "md") && !f.file_name().unwrap().to_string_lossy().starts_with('_'));
+        let name = |f: &PathBuf| f.file_name().unwrap().to_string_lossy().into_owned();
+        if dir == "content" {
+            files.retain(|f| name(f) != ".gitkeep");
+        } else {
+            files.retain(|f| f.extension().is_some_and(|e| e == "md") && !name(f).starts_with('_'));
+        }
         files.sort();
         out.push((label, icon, files.into_iter().map(|f| entry(p, f)).collect()));
     }
@@ -247,10 +280,48 @@ fn status_icon(ui: &egui::Ui, status: &str) -> (MaterialIcon, Color32) {
     }
 }
 
-/// The icon of a file: by kind, by status for a task, by name for the project files.
+/// Content files the editor opens; any other opens in the system's app for it.
+const TEXT_FILES: [&str; 7] = ["md", "txt", "json", "csv", "yaml", "yml", "toml"];
+
+fn extension(path: &Path) -> String {
+    path.extension().map_or(String::new(), |e| e.to_string_lossy().to_lowercase())
+}
+
+/// Opens a file in the system's app for its type, or shows it in the file manager.
+fn open_external(path: &Path, reveal: bool) -> Result<(), String> {
+    let mut cmd = if cfg!(windows) {
+        let mut c = std::process::Command::new("explorer");
+        c.arg(if reveal { format!("/select,{}", path.display()) } else { path.display().to_string() });
+        c
+    } else {
+        let mut c = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" });
+        match (reveal, cfg!(target_os = "macos")) {
+            (true, true) => c.arg("-R").arg(path),
+            (true, false) => c.arg(path.parent().unwrap_or(path)),
+            (false, _) => c.arg(path),
+        };
+        c
+    };
+    cmd.spawn().map(|_| ()).map_err(|e| format!("cannot open {}: {e}", path.display()))
+}
+
+/// The icon of a file: by kind, by status for a task, by name for the project files, by type for content.
 fn file_icon(ui: &egui::Ui, p: &Project, path: &Path) -> (MaterialIcon, Color32) {
     if p.invalid.iter().any(|f| f == path) {
         return (ICON_ERROR, ui.visuals().error_fg_color);
+    }
+    if path.starts_with(p.mwp.join("content")) {
+        let teal = Color32::from_rgb(80, 175, 160);
+        return match extension(path).as_str() {
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico" | "bmp" => (ICON_IMAGE, teal),
+            "pdf" => (ICON_PICTURE_AS_PDF, Color32::from_rgb(220, 90, 80)),
+            "fig" | "sketch" | "psd" | "xd" | "ai" => (ICON_PALETTE, Color32::from_rgb(200, 120, 200)),
+            "csv" | "xlsx" | "xls" | "json" | "yaml" | "yml" | "toml" => (ICON_TABLE_CHART, teal),
+            "mp4" | "mov" | "webm" => (ICON_MOVIE, teal),
+            "mp3" | "wav" | "ogg" => (ICON_AUDIO_FILE, teal),
+            "md" | "txt" => (ICON_DESCRIPTION, ui.visuals().weak_text_color()),
+            _ => (ICON_FILE_PRESENT, ui.visuals().weak_text_color()),
+        };
     }
     let doc = p.docs.iter().find(|d| d.path == path);
     match doc.map(|d| (d.kind(), d)) {
@@ -296,7 +367,8 @@ enum Dialog {
     NewTask { title: String, size: &'static str, modules: Vec<(String, bool)>, error: String },
     /// `folder` is where it goes under mwp/modules/, as `a/b`; empty for the top.
     NewModule { folder: String, id: String, kind: &'static str, summary: String, error: String },
-    NewFolder { parent: String, name: String, error: String },
+    /// A folder in Modules or Content; `parent` is `a/b` under that area.
+    NewFolder { area: Area, parent: String, name: String, error: String },
     /// `adrs`: the decisions in force (ID, title) it may replace; `supersedes` is empty for none.
     NewAdr { title: String, modules: Vec<(String, bool)>, adrs: Vec<(String, String)>, supersedes: String, error: String },
     /// `agents`: the agents set up in the project, offered as choices; `modules`: what it locks.
@@ -530,6 +602,21 @@ impl App {
         Some(Dialog::Delete { path, label, note, error: String::new() })
     }
 
+    /// Copies files into mwp/content/<folder>; names already there are kept and listed in a notice.
+    fn add_content(&mut self, folder: &str, files: &[PathBuf]) {
+        match Project::open(&self.root).and_then(|p| ops::content_add(&p, folder, files)) {
+            Ok(lines) => {
+                let skipped: Vec<&str> = lines.iter().filter_map(|l| l.strip_prefix("skip ")).collect();
+                if !skipped.is_empty() {
+                    let text = format!("Existing files are never replaced. Not added:\n{}", skipped.join("\n"));
+                    self.dialog = Some(Dialog::Notice { title: format!("{} file(s) not added", skipped.len()), text });
+                }
+            }
+            Err(e) => self.dialog = Some(Dialog::Notice { title: "Files not added".into(), text: e }),
+        }
+        self.reload();
+    }
+
     /// Start asks for the agent; Close and the status changes run at once. A task with unsaved
     /// edits is left alone: the step rewrites (or moves) its file.
     fn run_task_cmd(&mut self, cmd: TaskCmd) {
@@ -658,12 +745,17 @@ impl App {
                     });
                 });
             }
-            Dialog::NewFolder { parent, name, error } => {
+            Dialog::NewFolder { area, parent, name, error } => {
+                let area = *area;
                 egui::Modal::new(egui::Id::unique("new-folder")).show(ctx, |ui| {
                     ui.set_width(420.0);
                     dialog_title(ui, ICON_CREATE_NEW_FOLDER, "New folder");
-                    let dir = if parent.is_empty() { "mwp/modules/".to_string() } else { format!("mwp/modules/{parent}/") };
-                    ui.weak(format!("A folder for modules, inside {dir}"));
+                    let base = area.dir();
+                    let dir = if parent.is_empty() { format!("mwp/{base}/") } else { format!("mwp/{base}/{parent}/") };
+                    ui.weak(match area {
+                        Area::Modules => format!("A folder for modules, inside {dir}"),
+                        Area::Content => format!("A folder for resources, inside {dir}"),
+                    });
                     ui.add_space(12.0);
                     let file = slug(name);
                     section(ui, "Folder", |ui| {
@@ -675,7 +767,11 @@ impl App {
                     ui.separator();
                     right_row(ui, |ui| {
                         if ui.add_enabled(!file.is_empty(), primary(ui, "Create")).clicked() {
-                            match Project::open(&root).and_then(|p| ops::module_folder_new(&p, parent, &file)) {
+                            let made = Project::open(&root).and_then(|p| match area {
+                                Area::Modules => ops::module_folder_new(&p, parent, &file),
+                                Area::Content => ops::content_folder_new(&p, parent, &file),
+                            });
+                            match made {
                                 Ok(_) => (changed, close) = (true, true),
                                 Err(e) => *error = e,
                             }
@@ -1225,6 +1321,7 @@ impl eframe::App for App {
         let mut folder_cmd: Option<FolderCmd> = None;
         let mut task_cmd: Option<TaskCmd> = None;
         let mut update_map = false;
+        let mut open_error: Option<String> = None;
         let mut resolve: Option<(usize, editor::Resolve)> = None;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
@@ -1384,13 +1481,34 @@ impl eframe::App for App {
                                     } else {
                                         ui.selectable_label(open, (icon.rich_text().color(color), RichText::new(&e.id).strong(), title))
                                     };
-                                    let r = r.on_hover_text(v.project.rel(&e.path));
+                                    let rel = v.project.rel(&e.path);
+                                    let r = r.on_hover_text(&rel);
+                                    // Content that is not text opens in the system's app, not in the editor.
+                                    let external = e.path.starts_with(v.project.mwp.join("content")) && !TEXT_FILES.contains(&extension(&e.path).as_str());
                                     if r.clicked() {
-                                        action = Some(Action::Open(e.path.clone()));
+                                        if external {
+                                            open_error = open_external(&e.path, false).err();
+                                        } else {
+                                            action = Some(Action::Open(e.path.clone()));
+                                        }
                                     }
                                     r.context_menu(|ui| {
-                                        if ui.button(ic(ICON_EDIT, "Open")).clicked() {
-                                            action = Some(Action::Open(e.path.clone()));
+                                        let open = if external { ic(ICON_OPEN_IN_NEW, "Open with system app") } else { ic(ICON_EDIT, "Open") };
+                                        if ui.button(open).clicked() {
+                                            if external {
+                                                open_error = open_external(&e.path, false).err();
+                                            } else {
+                                                action = Some(Action::Open(e.path.clone()));
+                                            }
+                                            ui.close();
+                                        }
+                                        if ui.button(ic(ICON_FOLDER_OPEN, "Show in folder")).clicked() {
+                                            open_error = open_external(&e.path, true).err();
+                                            ui.close();
+                                        }
+                                        // Tasks cite resources by path: copy it to paste into a task.
+                                        if ui.button(ic(ICON_CONTENT_COPY, "Copy path")).on_hover_text(&rel).clicked() {
+                                            ui.ctx().copy_text(rel.clone());
                                             ui.close();
                                         }
                                         if ops::deletable(&v.project, &e.path) && ui.button(ic(ICON_DELETE, "Delete…")).clicked() {
@@ -1400,26 +1518,32 @@ impl eframe::App for App {
                                     });
                                 }
                         };
-                        let modules = v.project.mwp.join("modules");
                         for (label, icon, entries) in v.tree.iter().filter(|s| !s.0.ends_with("tasks")) {
                             let add = match *label {
                                 "Modules" => Some("New module"),
                                 "Specs" => Some("New SPEC"),
                                 "Decisions" => Some("New ADR"),
+                                "Content" => Some("Add files (or drop them on the window)"),
                                 _ => None,
                             };
-                            let (plus, header) = if *label == "Modules" {
-                                // Modules keep their folders; right-click a folder (or the section) to add to it.
-                                let refs: Vec<&Entry> = entries.iter().collect();
-                                group(ui, *icon, label, entries.len(), true, add, |ui| module_folder(ui, &modules, &modules, &v.module_dirs, &refs, &mut files, &mut folder_cmd))
-                            } else {
-                                group(ui, *icon, label, entries.len(), true, add, |ui| flat(ui, entries, &mut files))
+                            // Modules and Content keep their folders; right-click a folder (or the section) to add to it.
+                            let area = Area::ALL.into_iter().find(|a| SECTIONS.iter().any(|s| s.0 == *label && s.1 == a.dir()));
+                            let (plus, header) = match area {
+                                Some(area) => {
+                                    let root = v.project.mwp.join(area.dir());
+                                    let refs: Vec<&Entry> = entries.iter().collect();
+                                    group(ui, *icon, label, entries.len(), true, add, |ui| folder_tree(ui, area, &root, &root, &v.dirs, &refs, &mut files, &mut folder_cmd))
+                                }
+                                None => group(ui, *icon, label, entries.len(), true, add, |ui| flat(ui, entries, &mut files)),
                             };
-                            if *label == "Modules" {
-                                header.context_menu(|ui| folder_menu(ui, "", None, &mut folder_cmd));
+                            if let Some(area) = area {
+                                header.context_menu(|ui| folder_menu(ui, area, "", None, &mut folder_cmd));
                             }
                             if plus {
                                 (new_module, new_spec, new_adr) = (*label == "Modules", *label == "Specs", *label == "Decisions");
+                                if *label == "Content" {
+                                    folder_cmd = Some(FolderCmd::AddFiles(String::new()));
+                                }
                             }
                         }
                         // Tasks last, as one group with Open and Done inside.
@@ -1591,6 +1715,14 @@ impl eframe::App for App {
                 self.save_tab(i);
             }
         }
+        if let Some(e) = open_error {
+            self.message = Some(e);
+        }
+        // Files dropped on the window go to mwp/content/.
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        if !dropped.is_empty() && self.view.is_ok() {
+            self.add_content("", &dropped);
+        }
         if update_map {
             let map = self.root.join("mwp/map.md");
             if self.tabs.iter().any(|e| e.path == map && e.dirty()) {
@@ -1605,7 +1737,13 @@ impl eframe::App for App {
             Some(FolderCmd::NewModule(folder)) => {
                 self.dialog = Some(Dialog::NewModule { folder, id: String::new(), kind: "domain", summary: String::new(), error: String::new() });
             }
-            Some(FolderCmd::NewFolder(parent)) => self.dialog = Some(Dialog::NewFolder { parent, name: String::new(), error: String::new() }),
+            Some(FolderCmd::NewFolder(area, parent)) => self.dialog = Some(Dialog::NewFolder { area, parent, name: String::new(), error: String::new() }),
+            Some(FolderCmd::AddFiles(folder)) => {
+                let start = self.root.join("mwp/content").join(&folder);
+                if let Some(files) = rfd::FileDialog::new().set_title("Add to content").set_directory(&start).pick_files() {
+                    self.add_content(&folder, &files);
+                }
+            }
             Some(FolderCmd::Remove(dir)) => {
                 // remove_dir fails on a folder that is not empty: nothing in it can be lost.
                 if let Err(e) = fs::remove_dir(&dir) {
@@ -2029,6 +2167,39 @@ mod tests {
         assert_eq!(p.by_id("adr", "ADR-0001").unwrap().get("status"), "superseded");
         assert_eq!(p.by_id("adr", "ADR-0002").unwrap().list("modules"), ["user-auth"]);
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(p.by_id("adr", "ADR-0002").unwrap().path.clone()));
+
+        // Content: right-click > New folder, add a file (twice: never replaced), then delete it.
+        h.get_all_by_label_contains("Content").next().unwrap().click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("New folder…").click();
+        h.run_steps(30);
+        if let Some(Dialog::NewFolder { area, name, .. }) = h.state_mut().dialog.as_mut() {
+            assert!(*area == Area::Content);
+            *name = "icons".into();
+        } else {
+            panic!("the New folder dialog did not open");
+        }
+        h.run_steps(3);
+        h.get_by_label("Create").click();
+        h.run_steps(3);
+        assert!(root.join("mwp/content/icons").is_dir());
+        let logo = base.join("logo.png");
+        fs::write(&logo, [137u8, 80, 78, 71]).unwrap();
+        h.state_mut().add_content("icons", std::slice::from_ref(&logo)); // what the picker and a drop call
+        h.run_steps(3);
+        assert!(h.state().dialog.is_none() && root.join("mwp/content/icons/logo.png").exists());
+        h.state_mut().add_content("icons", std::slice::from_ref(&logo));
+        h.run_steps(30);
+        assert!(matches!(&h.state().dialog, Some(Dialog::Notice { title, .. }) if title == "1 file(s) not added"));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        h.get_by_label_contains("logo.png").click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Delete…").click();
+        h.run_steps(30);
+        h.get_by_label("Delete").click();
+        h.run_steps(3);
+        assert!(!root.join("mwp/content/icons/logo.png").exists());
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

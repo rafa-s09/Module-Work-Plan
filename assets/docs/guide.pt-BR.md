@@ -381,13 +381,21 @@ Cria uma SPEC ativa em `specs/` com o próximo ID SP-.
 | `--owner <módulo \| T-XXXX>` | (obrigatório) O módulo ou a task a que a SPEC pertence |
 | `--lifetime durable\|transient` | Padrão `durable` |
 
-### `mwp delete <id>`
+### `mwp delete <id | caminho>`
 
-Apaga um módulo, uma SPEC ou uma task que não foi concluída (tasks concluídas são histórico e ficam). A reserva e os locks da task são liberados; apagar um módulo atualiza o `map.md`. Uma task também pode ser indicada pelo código externo.
+Apaga um módulo, uma SPEC ou uma task que não foi concluída (tasks concluídas são histórico e ficam), ou um arquivo de `content/` indicado pelo caminho. A reserva e os locks da task são liberados; apagar um módulo atualiza o `map.md`. Uma task também pode ser indicada pelo código externo.
 
 | Opção | Efeito |
 |---|---|
 | `--yes` | Apaga sem perguntar. Obrigatório fora de um terminal, para que um agente ou um script nunca apague por engano |
+
+### `mwp content add <arquivo>...` / `mwp content folder <a/b>`
+
+O `content add` copia arquivos para `mwp/content/`. Um arquivo cujo nome já existe lá é pulado e informado, nunca substituído; o código de saída é 1 quando algum foi pulado. O `content folder` cria uma pasta lá (o nome segue a regra dos IDs).
+
+| Opção | Efeito |
+|---|---|
+| `--folder a/b` | (`add`) Copia para `content/a/b/` |
 
 ### `mwp remap`
 
