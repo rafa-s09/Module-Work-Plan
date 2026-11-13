@@ -24,13 +24,31 @@ pub struct Editor {
     /// Last selection in the source view, in characters.
     cursor: Option<CCursorRange>,
     cache: CommonMarkCache,
+    /// The file as it is on disk, when someone else changed it while this tab has unsaved edits.
+    /// Saving is refused until the user picks a version.
+    pub disk: Option<String>,
+    /// The disk version is shown under the conflict bar.
+    show_disk: bool,
+}
+
+/// How the user settled a conflict between the tab's edits and the file on disk.
+pub enum Resolve {
+    /// Write the tab's text over the disk version.
+    Mine,
+    /// Drop the edits and load the disk version.
+    Disk,
 }
 
 impl Editor {
     pub fn open(path: &Path) -> Result<Editor, String> {
         let raw = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = raw.replace("\r\n", "\n");
-        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default() })
+        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default(), disk: None, show_disk: false })
+    }
+
+    /// The file on disk with `\n` endings, and whether it uses CRLF.
+    fn read_disk(&self) -> Option<(String, bool)> {
+        fs::read_to_string(&self.path).ok().map(|raw| (raw.replace("\r\n", "\n"), raw.contains("\r\n")))
     }
 
     pub fn dirty(&self) -> bool {
@@ -41,23 +59,44 @@ impl Editor {
         self.path.file_name().unwrap().to_string_lossy().into_owned()
     }
 
+    /// Writes the tab, unless the file changed on disk since it was loaded or saved: then the
+    /// change is kept in `disk` and nothing is written, so neither version is lost.
     pub fn save(&mut self) -> Result<(), String> {
+        // Read again here: an agent may have written since the last refresh.
+        if let Some((disk, _)) = self.read_disk().filter(|(d, _)| *d != self.saved && *d != self.text) {
+            self.disk = Some(disk);
+            return Err(format!("{} changed on disk: choose which version to keep", self.name()));
+        }
         let text = if self.crlf { self.text.replace('\n', "\r\n") } else { self.text.clone() };
         fs::write(&self.path, text).map_err(|e| format!("cannot save {}: {e}", self.path.display()))?;
-        self.saved = self.text.clone();
+        (self.saved, self.disk) = (self.text.clone(), None);
         Ok(())
     }
 
-    /// Follows the file on disk (an agent may have changed it) unless there are edits to keep.
+    /// Follows the file on disk (an agent may have changed it). With unsaved edits the tab keeps
+    /// them and records the disk version as a conflict instead.
     pub fn refresh(&mut self) {
+        let Some((disk, crlf)) = self.read_disk() else { return };
         if !self.dirty() {
-            if let Ok(raw) = fs::read_to_string(&self.path) {
-                let text = raw.replace("\r\n", "\n");
-                if text != self.text {
-                    (self.text, self.saved, self.crlf) = (text.clone(), text, raw.contains("\r\n"));
-                }
+            if disk != self.text {
+                (self.text, self.saved, self.crlf) = (disk.clone(), disk, crlf);
             }
+            self.disk = None;
+        } else if disk != self.saved && disk != self.text {
+            self.disk = Some(disk);
+        } else {
+            self.disk = None;
         }
+    }
+
+    /// Settles a conflict. `Mine` takes the disk version as the base, so the next save writes over it.
+    pub fn resolve(&mut self, how: Resolve) {
+        match (how, self.read_disk()) {
+            (Resolve::Mine, Some((disk, _))) => self.saved = disk,
+            (Resolve::Disk, Some((disk, crlf))) => (self.text, self.saved, self.crlf) = (disk.clone(), disk, crlf),
+            (_, None) => {} // the file is gone: saving recreates it with the tab's text
+        }
+        (self.disk, self.show_disk) = (None, false);
     }
 
     /// The id of the source text box, so the Edit menu can give it focus back.
@@ -189,7 +228,9 @@ fn inline(s: &str, put: &mut impl FnMut(&str, Color32), p: &Palette) {
 }
 
 /// Toolbar, source and preview for the open file.
-pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) {
+/// Returns how the user settled a conflict with the disk, when they did.
+pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resolve> {
+    let resolve = conflict_bar(ui, ed);
     let mut change: Option<CCursorRange> = None;
     ui.horizontal(|ui| {
         ui.add_enabled_ui(*mode != Mode::Preview, |ui| {
@@ -258,6 +299,42 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) {
         ui.ctx().memory_mut(|m| m.request_focus(id));
         ed.cursor = Some(range);
     }
+    resolve
+}
+
+/// The warning shown while the file on disk and the tab's edits disagree, with the two ways out
+/// and the disk version on request (read-only, so parts of it can be copied into the edits).
+fn conflict_bar(ui: &mut egui::Ui, ed: &mut Editor) -> Option<Resolve> {
+    let disk = ed.disk.as_deref()?;
+    let warn = ui.visuals().warn_fg_color;
+    let mut resolve = None;
+    egui::Frame::new().fill(warn.gamma_multiply(0.12)).stroke(egui::Stroke::new(1.0, warn.gamma_multiply(0.5))).corner_radius(4).inner_margin(8).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(ICON_WARNING.rich_text().size(18.0).color(warn));
+            ui.vertical(|ui| {
+                ui.strong("This file changed on disk while you have unsaved edits.");
+                ui.weak("Saving is paused until you choose which version to keep.");
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Load disk version").on_hover_text("Drop your edits").clicked() {
+                    resolve = Some(Resolve::Disk);
+                }
+                if ui.button("Overwrite with mine").on_hover_text("Save your edits over the disk version").clicked() {
+                    resolve = Some(Resolve::Mine);
+                }
+                ui.toggle_value(&mut ed.show_disk, (ICON_VISIBILITY.rich_text(), "Show disk version"));
+            });
+        });
+        if ed.show_disk {
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical().id_salt(("disk", &ed.path)).max_height(220.0).show(ui, |ui| {
+                ui.add(egui::TextEdit::multiline(&mut &*disk).code_editor().desired_width(f32::INFINITY));
+            });
+        }
+    });
+    ui.add_space(4.0);
+    resolve
 }
 
 fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
@@ -338,7 +415,7 @@ mod tests {
     use super::*;
 
     fn editor(text: &str, a: usize, b: usize) -> Editor {
-        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default() }
+        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default(), disk: None, show_disk: false }
     }
 
     #[test]
@@ -357,6 +434,40 @@ mod tests {
         let mut e = editor("## Título", 3, 3);
         prefix(&mut e, "# ");
         assert_eq!(e.text, "# Título"); // headings replace each other, accents survive
+    }
+
+    #[test]
+    fn disk_changes_never_lose_edits() {
+        let f = std::env::temp_dir().join(format!("mwp-conflict-{}.md", std::process::id()));
+        fs::write(&f, "base\n").unwrap();
+        let mut ed = Editor::open(&f).unwrap();
+
+        // Clean tab: follows the disk.
+        fs::write(&f, "agent 1\n").unwrap();
+        ed.refresh();
+        assert_eq!((ed.text.as_str(), ed.disk.is_none()), ("agent 1\n", true));
+
+        // Edits plus a change on disk, even one the refresh has not seen yet: the save is refused.
+        ed.text.push_str("mine\n");
+        fs::write(&f, "agent 2\n").unwrap();
+        assert!(ed.save().is_err());
+        assert_eq!(fs::read_to_string(&f).unwrap(), "agent 2\n");
+        assert_eq!(ed.disk.as_deref(), Some("agent 2\n"));
+        ed.refresh();
+        assert!(ed.dirty() && ed.disk.is_some(), "the refresh keeps the edits and the conflict");
+
+        // Overwrite with mine.
+        ed.resolve(Resolve::Mine);
+        ed.save().unwrap();
+        assert_eq!(fs::read_to_string(&f).unwrap(), "agent 1\nmine\n");
+
+        // Load the disk version.
+        ed.text.push_str("more\n");
+        fs::write(&f, "agent 3\r\n").unwrap();
+        ed.refresh();
+        ed.resolve(Resolve::Disk);
+        assert!(!ed.dirty() && ed.disk.is_none() && ed.text == "agent 3\n" && ed.crlf);
+        let _ = fs::remove_file(&f);
     }
 
     #[test]

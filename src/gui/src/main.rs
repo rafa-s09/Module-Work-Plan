@@ -1225,6 +1225,7 @@ impl eframe::App for App {
         let mut folder_cmd: Option<FolderCmd> = None;
         let mut task_cmd: Option<TaskCmd> = None;
         let mut update_map = false;
+        let mut resolve: Option<(usize, editor::Resolve)> = None;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
             (Ok(v), Some(ed)) if ops::deletable(&v.project, &ed.path) => Some(ed.path.clone()),
@@ -1515,7 +1516,9 @@ impl eframe::App for App {
                             });
                         });
                         ui.separator();
-                        editor::show(ui, ed, &mut self.mode);
+                        if let Some(how) = editor::show(ui, ed, &mut self.mode) {
+                            resolve = self.active.map(|i| (i, how));
+                        }
                     }
                     None => {
                         ui.horizontal(|ui| {
@@ -1580,6 +1583,13 @@ impl eframe::App for App {
         }
         if let Some(cmd) = task_cmd {
             self.run_task_cmd(cmd);
+        }
+        if let Some((i, how)) = resolve {
+            let mine = matches!(how, editor::Resolve::Mine);
+            self.tabs[i].resolve(how);
+            if mine {
+                self.save_tab(i);
+            }
         }
         if update_map {
             let map = self.root.join("mwp/map.md");
@@ -1970,6 +1980,22 @@ mod tests {
         let done = root.join("mwp/tasks/done/T-0009-life.md");
         assert_eq!(task(), Some(("done".into(), "claude".into(), done.clone())));
         assert!(!life.exists() && h.state().current().is_some_and(|e| e.path == done), "the tab follows the file to tasks/done/");
+
+        // An agent writes the open file while it has unsaved edits: the bar shows, Ctrl+S is refused,
+        // "Overwrite with mine" saves the edits.
+        let i = h.state().active.unwrap();
+        h.state_mut().tabs[i].text.push_str("mine\n");
+        fs::write(&done, "agent wrote this\n").unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::S]);
+        h.run_steps(3);
+        assert_eq!(fs::read_to_string(&done).unwrap(), "agent wrote this\n");
+        h.get_by_label_contains("Show disk version").click();
+        h.run_steps(3);
+        h.get_by_label("Overwrite with mine").click();
+        h.run_steps(3);
+        assert!(fs::read_to_string(&done).unwrap().ends_with("mine\n") && !h.state().tabs[i].dirty() && h.state().tabs[i].disk.is_none());
 
         // A module summary edited on disk leaves map.md stale; the problem's button rebuilds it.
         let stale = |h: &Harness<App>| h.state().view.as_ref().unwrap().report.errors.iter().any(|e| e.starts_with(MAP_STALE));
