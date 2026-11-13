@@ -30,7 +30,7 @@ O CLI é escrito em Rust (1.85+) e não tem dependências. Instale o [Rust](http
 ```
 Se o PowerShell bloquear scripts: `powershell -ExecutionPolicy Bypass -File .\src\install.ps1`.
 
-Passe a pasta de um projeto para rodar também o `mwp init` nela (`./src/install.sh ../store`). Os dois scripts rodam `cargo install --path src/client --locked --force` e avisam se a pasta de instalação não estiver no seu `PATH`. Confira com:
+Passe a pasta de um projeto para rodar também o `mwp init` nela (`./src/install.sh ../store`), e `--gui` (no Windows, `-Gui`) para instalar também o editor de desktop `mwp-gui`. Os dois scripts rodam `cargo install --path src/client --locked --force` (e `src/gui` com a opção) e avisam se a pasta de instalação não estiver no seu `PATH`. Confira com:
 
 ```bash
 mwp --version

@@ -64,7 +64,7 @@ Install the CLI from a checkout of this repository (requires [Rust](https://rust
 .\src\install.ps1 path\to\your-project
 ```
 
-Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which asks which agents you use (Claude Code by default; also Codex, Cursor, Gemini CLI and GitHub Copilot) and creates `mwp/`, `AGENTS.md`, each agent's instruction file and skills, without overwriting anything. Leave the folder out to only install the CLI.
+Both scripts install `mwp` with `cargo install` and run `mwp init` in the folder, which asks which agents you use (Claude Code by default; also Codex, Cursor, Gemini CLI and GitHub Copilot) and creates `mwp/`, `AGENTS.md`, each agent's instruction file and skills, without overwriting anything. Leave the folder out to only install the CLI. Add `--gui` (Windows: `-Gui`) to also install the [editor](#editor-gui), `mwp-gui`.
 
 1. Fill `mwp/PROJECT.md` and replace the `<placeholders>` in `mwp/constitution.md`.
 2. Check `.gitignore`: `init` adds `.mwp/*` and `!.mwp/ledger.json`. The ledger is versioned, the rest of `.mwp/` is local.
@@ -107,6 +107,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **Edit > Find in project** (Ctrl+Shift+F): the Search tab of the bottom panel lists every match in the text files of `mwp/` (open tabs as edited), by file and line; a click opens the file with the match selected.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), the standard **Edit** commands (undo, redo, cut, copy, paste, select all), and a prompt before unsaved changes are lost. When an agent changes a file you are editing, a bar asks whether to keep your edits or the disk version; saving waits for the answer, so neither is lost.
 - **Content**: the resources in `mwp/content/` with their folders. Add files with **+**, right-click a folder or by dropping them on the window (an existing file is never replaced); right-click a file to open it in its app, show it in the folder, copy its path for a task, or delete it.
+- **Context** in a task's header: what an agent loads for the task (constitution, task, cited modules, SPECs, ADRs and tasks) with a token estimate, and the cited IDs that do not exist in red, like `mwp context`.
 - **Board** of the tasks by status; a card opens the task. **Start**, **Status** and **Close** (task header, or right-click a card) do what `mwp task start`, `release` and `close` do: claims and module locks, the move to `tasks/done/`, the `## Closure` check. Dragging a card to another column does the same: In progress opens Start, Open / Blocked / Review release it, Done closes it; the column that takes the card is outlined.
 - **Problems** from `mwp lint`; a line opens the file. A stale `map.md` gets an **Update map.md** button, like `mwp remap`.
 - **New task**, **New module**, **New SPEC** and **New ADR** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`, a SPEC gets a module or task as its owner, an ADR can replace one in force.
@@ -115,6 +116,8 @@ The CLI is optional: everything it does can be done by hand following the templa
 - The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode and each project's open tabs. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.
 
 It rereads the project every 2 seconds, so it follows what agents change.
+
+Install it with the installer's `--gui` / `-Gui` option, or on its own:
 
 ```bash
 cargo install --path src/gui --locked

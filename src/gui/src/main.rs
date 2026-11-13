@@ -625,6 +625,7 @@ impl eframe::App for App {
                                 }
                                 if let Some(t) = doc.filter(|d| d.kind() == "task") {
                                     task_buttons(ui, t, &mut ask.task_cmd);
+                                    context_button(ui, &v.project, t, &mut ask);
                                 }
                                 let stale = v.report.errors.iter().any(|e| e.starts_with(MAP_STALE));
                                 if stale && ed.path == v.project.mwp.join("map.md") {
@@ -1298,6 +1299,19 @@ mod tests {
         h.run_steps(3);
         assert_eq!(h.state().tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>(), [keep.clone()]);
         assert_eq!(h.state().active, Some(0));
+
+        // Context in a task's header: what an agent loads, missing IDs in red; a file opens on click.
+        fs::write(&t1, "---\nkind: task\nid: T-0001\nstatus: open\nsize: S\nmodules: []\nrefs: [T-0404]\n---\n# T-0001 — Add login\n").unwrap();
+        h.state_mut().reload();
+        let ctx = h.ctx.clone();
+        h.state_mut().apply(&ctx, Action::Open(t1.clone()));
+        h.run_steps(3);
+        h.get_by_label_contains("Context").click();
+        h.run_steps(3);
+        h.get_by_label_contains("Missing: T-0404 (refs)");
+        h.get_by_label_contains("mwp/constitution.md").click();
+        h.run_steps(3);
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(root.join("mwp/constitution.md")));
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

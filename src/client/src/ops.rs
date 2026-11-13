@@ -18,6 +18,38 @@ fn write(path: &Path, text: String) -> Result<(), String> {
     fs::create_dir_all(path.parent().unwrap()).and_then(|_| fs::write(path, text)).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// What an agent loads for a task (`mwp context`).
+pub struct Context {
+    /// Why each file is loaded (`always`, or the front matter field that cites it), the file and
+    /// its size in tokens.
+    pub files: Vec<(&'static str, PathBuf, u64)>,
+    /// IDs the task cites that do not exist, as `ID (field)`.
+    pub missing: Vec<String>,
+}
+
+impl Context {
+    pub fn tokens(&self) -> u64 {
+        self.files.iter().map(|f| f.2).sum()
+    }
+}
+
+/// The constitution, the task, then what its front matter cites.
+pub fn context(p: &Project, task: &Doc) -> Context {
+    // shortcut: ~4 bytes per token, good enough to spot an oversized task.
+    let tokens = |path: &Path| fs::metadata(path).map(|m| m.len() / 4).unwrap_or(0);
+    let mut files: Vec<(&'static str, PathBuf, u64)> = [p.mwp.join("constitution.md"), task.path.clone()].into_iter().map(|f| ("always", f.clone(), tokens(&f))).collect();
+    let mut missing = Vec::new();
+    for (field, kind) in [("modules", "module"), ("reads", "module"), ("specs", "spec"), ("decisions", "adr"), ("refs", "task")] {
+        for id in task.list(field) {
+            match p.by_id(kind, &id) {
+                Some(d) => files.push((field, d.path.clone(), tokens(&d.path))),
+                None => missing.push(format!("{id} ({field})")),
+            }
+        }
+    }
+    Context { files, missing }
+}
+
 /// A task by ID or by company work code (`external:`).
 pub fn find_task<'a>(p: &'a Project, key: &str) -> Result<&'a Doc, String> {
     p.of_kind("task").find(|t| t.id() == key || t.list("external").iter().any(|e| e == key))
@@ -315,6 +347,16 @@ mod tests {
         task_new(&open(), "First", "S", &[("modules", Some("order"))]).unwrap();
         task_new(&open(), "Second", "M", &[("modules", Some("order")), ("external", Some("PROJ-9"))]).unwrap();
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("size"), "M");
+        // Context: constitution, task, cited module; a cited ID that does not exist is missing.
+        task_new(&open(), "Third", "S", &[("modules", Some("order")), ("refs", Some("T-0404"))]).unwrap();
+        let p = open();
+        let c = context(&p, p.by_id("task", "T-0003").unwrap());
+        let files: Vec<(&str, String)> = c.files.iter().map(|f| (f.0, p.rel(&f.1))).collect();
+        assert_eq!(files[0], ("always", "mwp/constitution.md".into()));
+        assert_eq!((files[1].0, files[2].clone()), ("always", ("modules", "mwp/modules/order.md".into())));
+        assert_eq!(c.missing, ["T-0404 (refs)"]);
+        assert!(c.tokens() > 0 && c.tokens() == c.files.iter().map(|f| f.2).sum::<u64>());
+        delete(&p, &p.by_id("task", "T-0003").unwrap().path).unwrap();
 
         task_start(&open(), "T-0001", "claude").unwrap();
         assert!(task_start(&open(), "PROJ-9", "codex").unwrap_err().contains("T-0001"));

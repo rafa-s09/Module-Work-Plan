@@ -311,38 +311,24 @@ fn context(a: &Args) -> Res {
     let key = a.pos.first().ok_or("usage: mwp context <T-XXXX | external code> [--paths | --cat]")?;
     let p = Project::find()?;
     let task = ops::find_task(&p, key)?;
-
-    let mut files = vec![("always", p.mwp.join("constitution.md")), ("always", task.path.clone())];
-    let mut missing = Vec::new();
-    for (field, kind) in [("modules", "module"), ("reads", "module"), ("specs", "spec"), ("decisions", "adr"), ("refs", "task")] {
-        for id in task.list(field) {
-            match p.by_id(kind, &id) {
-                Some(d) => files.push((field, d.path.clone())),
-                None => missing.push(format!("{id} ({field})")),
-            }
-        }
-    }
-    let mut total = 0;
-    for (label, path) in &files {
+    let c = ops::context(&p, task);
+    for (label, path, tokens) in &c.files {
         if a.has("--paths") {
             println!("{}", p.rel(path));
         } else if a.has("--cat") {
             // For agents without skills: the whole context in one stream.
             println!("<!-- file: {} -->\n{}", p.rel(path), mwp_core::doc::read(path).unwrap_or_default());
         } else {
-            // shortcut: ~4 bytes per token, good enough to spot an oversized task.
-            let tokens = fs::metadata(path).map(|m| m.len() / 4).unwrap_or(0);
-            total += tokens;
             println!("{:<55} {:>7}  {label}", p.rel(path), tokens);
         }
     }
     if !a.has("--paths") && !a.has("--cat") {
-        println!("{:<55} {:>7}  tokens (estimate)", "total", total);
+        println!("{:<55} {:>7}  tokens (estimate)", "total", c.tokens());
     }
-    for m in &missing {
+    for m in &c.missing {
         eprintln!("MISSING {m}");
     }
-    Ok(missing.is_empty())
+    Ok(c.missing.is_empty())
 }
 
 fn adr(a: &Args) -> Res {

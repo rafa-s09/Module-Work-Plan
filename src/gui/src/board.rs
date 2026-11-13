@@ -62,6 +62,38 @@ pub fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     task_status_items(ui, id, status, cmd);
 }
 
+/// The Context button of a task's header: what an agent loads for the task, like `mwp context`,
+/// with a token estimate and the cited IDs that do not exist. A file opens on click.
+pub fn context_button(ui: &mut egui::Ui, p: &Project, t: &Doc, ask: &mut Asks) {
+    let c = ops::context(p, t);
+    let label = if c.missing.is_empty() { ic(ICON_LIBRARY_BOOKS, "Context") } else { ic(ICON_WARNING, "Context") };
+    let r = ui.menu_button(label, |ui| {
+        ui.strong(format!("What an agent loads for {}", t.id()));
+        ui.weak("Like mwp context: the constitution, the task, then what its front matter cites.");
+        ui.separator();
+        egui::Grid::new(("context", t.id())).num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
+            for (why, path, tokens) in &c.files {
+                let (icon, color) = file_icon(ui, p, path);
+                if ui.selectable_label(false, (icon.rich_text().color(color), p.rel(path))).on_hover_text("Open").clicked() {
+                    ask.action = Some(Action::Open(path.clone()));
+                    ui.close();
+                }
+                ui.weak(*why);
+                ui.label(RichText::new(tokens.to_string()).monospace());
+                ui.end_row();
+            }
+            ui.strong("Total");
+            ui.weak("tokens (estimate)");
+            ui.strong(RichText::new(c.tokens().to_string()).monospace());
+            ui.end_row();
+        });
+        for m in &c.missing {
+            ui.colored_label(ui.visuals().error_fg_color, format!("{} Missing: {m}", ICON_ERROR.codepoint));
+        }
+    });
+    r.response.on_hover_text(if c.missing.is_empty() { "What an agent loads for this task" } else { "The task cites IDs that do not exist" });
+}
+
 /// A task card: ID, size, title, then its modules, agent and work codes. The whole card is clickable.
 pub fn card(ui: &mut egui::Ui, t: &Doc) -> egui::Response {
     let rect = egui::Frame::group(ui.style())

@@ -28,7 +28,7 @@ The CLI is written in Rust (1.85+) and has no dependencies. Install [Rust](https
 ```
 If PowerShell blocks scripts: `powershell -ExecutionPolicy Bypass -File .\src\install.ps1`.
 
-Pass a project folder to also run `mwp init` there (`./src/install.sh ../store`). Both scripts run `cargo install --path src/client --locked --force` and say if the install folder is missing from your `PATH`. Check with:
+Pass a project folder to also run `mwp init` there (`./src/install.sh ../store`), and `--gui` (Windows: `-Gui`) to also install the desktop editor `mwp-gui`. Both scripts run `cargo install --path src/client --locked --force` (and `src/gui` with the option) and say if the install folder is missing from your `PATH`. Check with:
 
 ```bash
 mwp --version

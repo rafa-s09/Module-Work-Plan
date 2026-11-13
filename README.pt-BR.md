@@ -64,7 +64,7 @@ Instale o CLI a partir de um clone deste repositório (requer [Rust](https://rus
 .\src\install.ps1 caminho\do\seu-projeto
 ```
 
-Os dois scripts instalam o `mwp` com `cargo install` e rodam `mwp init` na pasta, que pergunta quais agentes você usa (Claude Code por padrão; também Codex, Cursor, Gemini CLI e GitHub Copilot) e cria `mwp/`, `AGENTS.md`, o arquivo de instruções e as skills de cada agente, sem sobrescrever nada. Omita a pasta para instalar apenas o CLI.
+Os dois scripts instalam o `mwp` com `cargo install` e rodam `mwp init` na pasta, que pergunta quais agentes você usa (Claude Code por padrão; também Codex, Cursor, Gemini CLI e GitHub Copilot) e cria `mwp/`, `AGENTS.md`, o arquivo de instruções e as skills de cada agente, sem sobrescrever nada. Omita a pasta para instalar apenas o CLI. Acrescente `--gui` (no Windows, `-Gui`) para instalar também o [editor](#editor-gui), `mwp-gui`.
 
 1. Preencha `mwp/PROJECT.md` e substitua os `<placeholders>` em `mwp/constitution.md`.
 2. Confira o `.gitignore`: o `init` adiciona `.mwp/*` e `!.mwp/ledger.json`. O ledger é versionado, o resto de `.mwp/` é local.
@@ -107,6 +107,7 @@ O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o traba
 - **Edit > Find in project** (Ctrl+Shift+F): a aba Search do painel inferior lista todas as ocorrências nos arquivos de texto de `mwp/` (abas abertas como estão no editor), por arquivo e linha; um clique abre o arquivo com a ocorrência selecionada.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), os comandos padrão do **Edit** (desfazer, refazer, recortar, copiar, colar, selecionar tudo) e um aviso antes de perder alterações não salvas. Quando um agente altera um arquivo que você está editando, uma barra pergunta se fica a sua edição ou a versão do disco; o salvamento espera a resposta, para nenhuma das duas se perder.
 - **Content**: os recursos de `mwp/content/` com suas pastas. Adicione arquivos pelo **+**, pelo botão direito numa pasta ou arrastando-os para a janela (um arquivo existente nunca é substituído); o botão direito num arquivo abre no app dele, mostra na pasta, copia o caminho para citar numa task ou apaga.
+- **Context** no cabeçalho de uma task: o que um agente carrega para a task (constituição, task, módulos, SPECs, ADRs e tasks citados), com a estimativa de tokens e os IDs citados que não existem em vermelho, como o `mwp context`.
 - **Quadro** das tasks por status; um cartão abre a task. **Start**, **Status** e **Close** (cabeçalho da task, ou botão direito num cartão) fazem o mesmo que `mwp task start`, `release` e `close`: reserva e locks dos módulos, a mudança para `tasks/done/`, a conferência do `## Closure`. Arrastar um cartão para outra coluna faz o mesmo: In progress abre o Start, Open / Blocked / Review fazem o release, Done faz o Close; a coluna que aceita o cartão fica destacada.
 - **Problemas** do `mwp lint`; uma linha abre o arquivo. Um `map.md` desatualizado ganha o botão **Update map.md**, como o `mwp remap`.
 - **New task**, **New module**, **New SPEC** e **New ADR** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`, uma SPEC recebe um módulo ou uma task como dono e um ADR pode substituir outro em vigor.
@@ -115,6 +116,8 @@ O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o traba
 - A GUI volta como foi deixada: tamanho e posição da janela, largura do explorador, altura do painel inferior, seções recolhidas, modo do editor e as abas abertas de cada projeto. O estado fica em `<config>/mwp-gui/` (no Windows, `%APPDATA%\mwp-gui\`); se o arquivo estiver danificado, a GUI abre com o padrão.
 
 Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram.
+
+Instale com a opção `--gui` / `-Gui` do instalador, ou separado:
 
 ```bash
 cargo install --path src/gui --locked
