@@ -79,7 +79,6 @@ Cada item diz **o quê**, **por quê**, **por onde começar** no código e quand
 
 ## Qualidade e manutenção
 
-- **Dividir o `main.rs`:** ele tem cerca de 2.200 linhas. Separar em `explorer.rs`, `board.rs`, `dialogs.rs` e `tabs.rs` antes de crescer mais, sem mudar o comportamento.
 - **Testar fora do Windows:** Linux e macOS (o `open_external` usa `xdg-open` e `open`, nunca testados).
 - **Testar o tema claro:** as cores fixas dos ícones e do destaque da busca foram escolhidas no tema escuro.
 - **Testes que faltam:** Recortar / Copiar / Colar pelo menu Edit, arrastar arquivos para a janela, "Copy path" e "Show in folder".

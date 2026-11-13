@@ -36,7 +36,7 @@ Tasks
                                             Files an agent reads for a task, with token estimate; --cat prints them
 
 Modules and SPECs
-  module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]
+  module new <id> --summary <text> [--type domain|ui|api|infra|lib] [--folder a/b]
                                             Create a module from the template (default type domain), in a
                                             subfolder of mwp/modules/ with --folder, and update map.md
   module folder <a/b>                       Create a folder for modules under mwp/modules/
@@ -363,7 +363,7 @@ fn module(a: &Args) -> Res {
     let p = Project::find()?;
     match (a.pos.first().map(String::as_str), a.pos.get(1)) {
         (Some("new"), Some(id)) => {
-            let summary = a.get("--summary").ok_or("usage: mwp module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]")?;
+            let summary = a.get("--summary").ok_or("usage: mwp module new <id> --summary <text> [--type domain|ui|api|infra|lib] [--folder a/b]")?;
             show(ops::module_new(&p, a.get("--folder").unwrap_or(""), id, a.get("--type").unwrap_or("domain"), summary))
         }
         (Some("folder"), Some(path)) => {
@@ -371,7 +371,7 @@ fn module(a: &Args) -> Res {
             let (parent, name) = path.rsplit_once(['/', '\\']).unwrap_or(("", path));
             show(ops::module_folder_new(&p, parent, name))
         }
-        _ => Err("usage: mwp module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]\n       mwp module folder <a/b>".into()),
+        _ => Err("usage: mwp module new <id> --summary <text> [--type domain|ui|api|infra|lib] [--folder a/b]\n       mwp module folder <a/b>".into()),
     }
 }
 

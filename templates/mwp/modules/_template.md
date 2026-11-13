@@ -1,7 +1,7 @@
 ---
 kind: module
 id: <module-id>
-type: <ui | domain | infra>
+type: <domain | ui | api | infra | lib>
 summary: <Responsibility in one line.>
 code: [<src/...>]
 tests: [<tests/...>]

@@ -1,7 +1,7 @@
 //! Operations that change the project. They return the lines to show; nothing here prints.
 
 use crate::doc::{map_texts, parse_list, read, set_field, slug, today, Doc, Project};
-use crate::lint::{has_content, lint, Report};
+use crate::lint::{has_content, lint, Report, MODULE_TYPES};
 use crate::scaffold::template;
 use crate::state;
 use std::fs;
@@ -198,8 +198,8 @@ pub fn module_new(p: &Project, folder: &str, id: &str, kind: &str, summary: &str
     if id.is_empty() || slug(id) != id {
         return Err("the module id is lowercase words joined by `-`, like `order` or `user-auth`".into());
     }
-    if !["ui", "domain", "infra"].contains(&kind) {
-        return Err("the module type must be ui, domain or infra".into());
+    if !MODULE_TYPES.contains(&kind) {
+        return Err(format!("the module type must be one of: {}", MODULE_TYPES.join(", ")));
     }
     if summary.is_empty() {
         return Err("the module needs a one-line summary".into());
@@ -358,10 +358,12 @@ mod tests {
             assert!(module_folder_new(&open(), "", bad).is_err(), "{bad}");
         }
         assert!(module_new(&open(), "../x", "escape", "domain", "x").is_err());
-        module_new(&open(), "billing/tax", "vat", "domain", "VAT rules").unwrap();
+        assert!(module_new(&open(), "billing/tax", "vat", "service", "x").is_err());
+        module_new(&open(), "billing/tax", "vat", "api", "VAT rules").unwrap();
         assert!(root.join("mwp/modules/billing/tax/vat.md").exists() && open().by_id("module", "vat").is_some());
         assert!(module_new(&open(), "billing", "vat", "domain", "x").is_err());
-        assert!(read(&root.join("mwp/map.md")).unwrap().contains("| vat | domain | VAT rules |"));
+        assert!(read(&root.join("mwp/map.md")).unwrap().contains("| vat | api | VAT rules |"));
+        assert!(!lint(&open()).warnings.iter().any(|w| w.contains("vat")), "{:?}", lint(&open()).warnings);
         delete(&open(), &root.join("mwp/modules/billing/tax/vat.md")).unwrap();
         fs::remove_dir_all(root.join("mwp/modules/billing")).unwrap();
 

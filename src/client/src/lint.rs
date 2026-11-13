@@ -41,8 +41,11 @@ const ENUMS: [(&str, &str, &[&str]); 6] = [
     ("spec", "lifetime", &["durable", "transient"]),
     ("spec", "status", &["active", "incorporated", "archived"]),
     ("adr", "status", &["proposed", "accepted", "rejected", "superseded", "deprecated"]),
-    ("module", "type", &["ui", "domain", "infra"]),
+    ("module", "type", &MODULE_TYPES),
 ];
+
+/// Module types: a label shown in `map.md`; nothing else depends on it.
+pub const MODULE_TYPES: [&str; 5] = ["domain", "ui", "api", "infra", "lib"];
 
 /// Line limits, sized for large projects. Over them is always a warning, never an error.
 pub const LIMITS: [(&str, usize); 3] = [("project", 150), ("module", 500), ("task", 200)];

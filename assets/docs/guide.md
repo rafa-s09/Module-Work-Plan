@@ -121,7 +121,7 @@ To write one by hand, copy `mwp/modules/_template.md` to `mwp/modules/order.md` 
 ---
 kind: module
 id: order
-type: domain                 # ui | domain | infra
+type: domain                 # domain | ui | api | infra | lib
 summary: Order creation and status rules
 code: [src/order/]
 tests: [tests/order/]
@@ -130,6 +130,16 @@ depends_on: [customer]
 updated: 2026-11-03
 ---
 ```
+
+`type` is a label shown in `map.md`; pick the one that fits best:
+
+| Type | For |
+|---|---|
+| `domain` | Business rules and states |
+| `ui` | Screens and components |
+| `api` | Entry points: HTTP routes, CLI commands, webhooks, queue workers, scheduled jobs |
+| `infra` | Storage, external services, deploy, configuration, tooling |
+| `lib` | Code shared by several modules: utilities, common types, internal SDKs |
 
 Register each test in the `## Tests` table with its ID. The test name in code starts with the same ID (`TEST-0007: 5% off over R$500`), which is how the CLI finds it.
 
@@ -367,7 +377,7 @@ Prints the next free ID: the highest number found in MWP files, module test fold
 | Option | Effect |
 |---|---|
 | `--summary <text>` | (required) The module's responsibility, in one line |
-| `--type domain\|ui\|infra` | Default `domain` |
+| `--type domain\|ui\|api\|infra\|lib` | Default `domain` |
 | `--folder a/b` | Creates the module in `modules/a/b/` |
 
 ### `mwp spec new <title>`
@@ -432,7 +442,7 @@ Checks the whole project. It verifies only what needs no human judgment:
 | SPEC `owner:` is not a module or task | error |
 | Module checks from `remap` | error |
 | `map.md` out of date | error |
-| Module `type` outside `ui` / `domain` / `infra`; file name not starting with the task ID | warning |
+| Module `type` outside `domain` / `ui` / `api` / `infra` / `lib`; file name not starting with the task ID | warning |
 | Over the size limits (PROJECT ~150, constitution ~300, module ~500, task ~200 lines) | warning, never an error |
 
 | Option | Effect |

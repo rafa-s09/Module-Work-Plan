@@ -123,7 +123,7 @@ Para escrever um à mão, copie `mwp/modules/_template.md` para `mwp/modules/ord
 ---
 kind: module
 id: order
-type: domain                 # ui | domain | infra
+type: domain                 # domain | ui | api | infra | lib
 summary: Order creation and status rules
 code: [src/order/]
 tests: [tests/order/]
@@ -132,6 +132,16 @@ depends_on: [customer]
 updated: 2026-11-03
 ---
 ```
+
+`type` é um rótulo mostrado no `map.md`; escolha o que melhor se encaixa:
+
+| Tipo | Para |
+|---|---|
+| `domain` | Regras de negócio e estados |
+| `ui` | Telas e componentes |
+| `api` | Pontos de entrada: rotas HTTP, comandos de CLI, webhooks, workers de fila, tarefas agendadas |
+| `infra` | Armazenamento, serviços externos, deploy, configuração, ferramentas |
+| `lib` | Código compartilhado por vários módulos: utilitários, tipos comuns, SDKs internos |
 
 Registre cada teste na tabela `## Tests` com o seu ID. O nome do teste no código começa com o mesmo ID (`TEST-0007: 5% off over R$500`), e é assim que o CLI o encontra.
 
@@ -369,7 +379,7 @@ O `module new` cria `modules/<id>.md` a partir do template, com `code: []` e `te
 | Opção | Efeito |
 |---|---|
 | `--summary <texto>` | (obrigatório) A responsabilidade do módulo, em uma linha |
-| `--type domain\|ui\|infra` | Padrão `domain` |
+| `--type domain\|ui\|api\|infra\|lib` | Padrão `domain` |
 | `--folder a/b` | Cria o módulo em `modules/a/b/` |
 
 ### `mwp spec new <title>`
@@ -434,7 +444,7 @@ Verifica o projeto inteiro. Confere apenas o que não exige julgamento humano:
 | `owner:` de uma SPEC não é um módulo nem uma task | erro |
 | Verificações de módulo do `remap` | erro |
 | `map.md` desatualizado | erro |
-| `type` do módulo fora de `ui` / `domain` / `infra`; nome de arquivo que não começa com o ID da task | aviso |
+| `type` do módulo fora de `domain` / `ui` / `api` / `infra` / `lib`; nome de arquivo que não começa com o ID da task | aviso |
 | Acima dos limites de tamanho (PROJECT ~150, constituição ~300, módulo ~500, task ~200 linhas) | aviso, nunca erro |
 
 | Opção | Efeito |
