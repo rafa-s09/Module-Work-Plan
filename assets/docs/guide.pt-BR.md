@@ -352,7 +352,7 @@ Imprime o próximo ID livre: o maior número encontrado nos arquivos do MWP, nas
 |---|---|
 | `--reserve` | Registra o número em `.mwp/ledger.json`, para que nunca seja entregue de novo, mesmo se o arquivo for apagado |
 
-O `task new` e o `adr new` reservam seus IDs automaticamente.
+O `task new`, o `spec new` e o `adr new` reservam seus IDs automaticamente.
 
 ### `mwp adr new <title>` / `mwp adr list`
 
@@ -361,6 +361,33 @@ O `task new` e o `adr new` reservam seus IDs automaticamente.
 | `--modules a,b` | (`new`) Módulos regidos pela decisão |
 | `--supersedes ADR-XXXX` | (`new`) Marca esse ADR como `superseded`, com `superseded_by:` e a data de hoje |
 | `--status <s>` | (`list`) Apenas este status |
+
+### `mwp module new <id>` / `mwp module folder <a/b>`
+
+O `module new` cria `modules/<id>.md` a partir do template, com `code: []` e `tests: []`, e atualiza o `map.md`. O ID do módulo é único em todas as pastas. O `module folder` cria uma pasta para módulos; o nome segue a regra dos IDs (palavras minúsculas ligadas por `-`).
+
+| Opção | Efeito |
+|---|---|
+| `--summary <texto>` | (obrigatório) A responsabilidade do módulo, em uma linha |
+| `--type domain\|ui\|infra` | Padrão `domain` |
+| `--folder a/b` | Cria o módulo em `modules/a/b/` |
+
+### `mwp spec new <title>`
+
+Cria uma SPEC ativa em `specs/` com o próximo ID SP-.
+
+| Opção | Efeito |
+|---|---|
+| `--owner <módulo \| T-XXXX>` | (obrigatório) O módulo ou a task a que a SPEC pertence |
+| `--lifetime durable\|transient` | Padrão `durable` |
+
+### `mwp delete <id>`
+
+Apaga um módulo, uma SPEC ou uma task que não foi concluída (tasks concluídas são histórico e ficam). A reserva e os locks da task são liberados; apagar um módulo atualiza o `map.md`. Uma task também pode ser indicada pelo código externo.
+
+| Opção | Efeito |
+|---|---|
+| `--yes` | Apaga sem perguntar. Obrigatório fora de um terminal, para que um agente ou um script nunca apague por engano |
 
 ### `mwp remap`
 

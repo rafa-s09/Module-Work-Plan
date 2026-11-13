@@ -35,6 +35,17 @@ Tasks
   context <T-XXXX | external code> [--paths | --cat]
                                             Files an agent reads for a task, with token estimate; --cat prints them
 
+Modules and SPECs
+  module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]
+                                            Create a module from the template (default type domain), in a
+                                            subfolder of mwp/modules/ with --folder, and update map.md
+  module folder <a/b>                       Create a folder for modules under mwp/modules/
+  spec new <title> --owner <module|T-XXXX> [--lifetime durable|transient]
+                                            Create an active SPEC with the next SP- ID (default durable)
+  delete <id> [--yes]                       Delete a module, a SPEC or a task not done; frees the task's locks
+                                            and updates map.md. Asks first; --yes skips the question (needed
+                                            when not run from a terminal)
+
 IDs and decisions
   next <T|SP|ADR|TEST> [--reserve]          Next free ID; --reserve records it in .mwp/ledger.json
   adr new <title> [--modules a,b] [--supersedes ADR-XXXX]
@@ -47,7 +58,10 @@ Environment
 ";
 
 /// Flags that take a value; every other `--x` is a switch.
-const VALUED: [&str; 10] = ["--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external", "--agent"];
+const VALUED: [&str; 15] = [
+    "--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external", "--agent",
+    "--summary", "--type", "--folder", "--owner", "--lifetime",
+];
 
 struct Args {
     pos: Vec<String>,
@@ -97,6 +111,9 @@ fn main() -> ExitCode {
         "next" => Args::parse(rest, &["--reserve"]).and_then(|a| next(&a)),
         "context" => Args::parse(rest, &["--paths", "--cat"]).and_then(|a| context(&a)),
         "adr" => Args::parse(rest, &["--modules", "--supersedes", "--status"]).and_then(|a| adr(&a)),
+        "module" => Args::parse(rest, &["--summary", "--type", "--folder"]).and_then(|a| module(&a)),
+        "spec" => Args::parse(rest, &["--owner", "--lifetime"]).and_then(|a| spec(&a)),
+        "delete" => Args::parse(rest, &["--yes"]).and_then(|a| delete(&a)),
         "-V" | "--version" => {
             println!("mwp {}", env!("CARGO_PKG_VERSION"));
             Ok(true)
@@ -334,4 +351,49 @@ fn adr(a: &Args) -> Res {
         Some("new") => show(ops::adr_new(&p, &a.pos[1..].join(" "), a.get("--modules"), a.get("--supersedes"))),
         _ => Err("usage: mwp adr <new|list> ...".into()),
     }
+}
+
+fn module(a: &Args) -> Res {
+    let p = Project::find()?;
+    match (a.pos.first().map(String::as_str), a.pos.get(1)) {
+        (Some("new"), Some(id)) => {
+            let summary = a.get("--summary").ok_or("usage: mwp module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]")?;
+            show(ops::module_new(&p, a.get("--folder").unwrap_or(""), id, a.get("--type").unwrap_or("domain"), summary))
+        }
+        (Some("folder"), Some(path)) => {
+            let path = path.trim_matches(['/', '\\']);
+            let (parent, name) = path.rsplit_once(['/', '\\']).unwrap_or(("", path));
+            show(ops::module_folder_new(&p, parent, name))
+        }
+        _ => Err("usage: mwp module new <id> --summary <text> [--type domain|ui|infra] [--folder a/b]\n       mwp module folder <a/b>".into()),
+    }
+}
+
+fn spec(a: &Args) -> Res {
+    match a.pos.first().map(String::as_str) {
+        Some("new") => {
+            let owner = a.get("--owner").ok_or("usage: mwp spec new <title> --owner <module|T-XXXX> [--lifetime durable|transient]")?;
+            show(ops::spec_new(&Project::find()?, &a.pos[1..].join(" "), owner, a.get("--lifetime").unwrap_or("durable")))
+        }
+        _ => Err("usage: mwp spec new <title> --owner <module|T-XXXX> [--lifetime durable|transient]".into()),
+    }
+}
+
+/// Deletes by ID: a module, a SPEC, or a task (also by its external code).
+fn delete(a: &Args) -> Res {
+    let key = a.pos.first().ok_or("usage: mwp delete <module | SP-XXXX | T-XXXX> [--yes]")?;
+    let p = Project::find()?;
+    let doc = p.docs.iter().find(|d| d.id() == key && ["module", "spec", "task"].contains(&d.kind())).or_else(|| ops::find_task(&p, key).ok())
+        .ok_or(format!("no module, SPEC or task with id `{key}`"))?;
+    if !a.has("--yes") {
+        // Deleting cannot be undone: a person confirms, an agent or a script must say --yes.
+        if !io::stdin().is_terminal() {
+            return Err(format!("deleting {} cannot be undone; pass --yes", p.rel(&doc.path)));
+        }
+        if !matches!(ask(&format!("Delete {}? This cannot be undone [y/N]: ", p.rel(&doc.path))).to_lowercase().as_str(), "y" | "yes") {
+            println!("nothing deleted");
+            return Ok(true);
+        }
+    }
+    show(ops::delete(&p, &doc.path))
 }

@@ -85,6 +85,9 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 | `mwp context T-0001` | Arquivos que o agente vai ler em uma task, com estimativa de tokens |
 | `mwp next <T\|SP\|ADR\|TEST>` | Próximo ID livre, com reserva opcional em `.mwp/ledger.json` |
 | `mwp adr new` / `mwp adr list` | Cria um ADR proposto (podendo substituir outro) / lista os ADRs |
+| `mwp module new` / `mwp module folder` | Cria um módulo (podendo ser numa subpasta) e atualiza o `map.md` / cria uma pasta para módulos |
+| `mwp spec new` | Cria uma SPEC ativa, com um módulo ou uma task como dono |
+| `mwp delete <id>` | Apaga um módulo, uma SPEC ou uma task não concluída, depois de confirmar (`--yes` pula a pergunta) |
 | `mwp remap` | Reverifica os módulos e regenera o `map.md` |
 | `mwp map` | Imprime, grava ou confere o mapa de módulos |
 | `mwp lint` | Verifica o projeto inteiro; código de saída 1 se houver erros |

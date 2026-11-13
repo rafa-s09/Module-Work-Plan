@@ -85,6 +85,9 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 | `mwp context T-0001` | Files the agent will read for a task, with a token estimate |
 | `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json` |
 | `mwp adr new` / `mwp adr list` | Creates a proposed ADR (optionally superseding one) / lists ADRs |
+| `mwp module new` / `mwp module folder` | Creates a module (optionally in a subfolder) and updates `map.md` / creates a folder for modules |
+| `mwp spec new` | Creates an active SPEC owned by a module or task |
+| `mwp delete <id>` | Deletes a module, a SPEC or a task not done, after asking (`--yes` to skip) |
 | `mwp remap` | Rechecks modules and regenerates `map.md` |
 | `mwp map` | Prints, writes or checks the module map |
 | `mwp lint` | Checks the whole project; exit code 1 on errors |

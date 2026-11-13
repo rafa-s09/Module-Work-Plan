@@ -350,7 +350,7 @@ Prints the next free ID: the highest number found in MWP files, module test fold
 |---|---|
 | `--reserve` | Records the number in `.mwp/ledger.json`, so it is never handed out again, even if the file is deleted |
 
-`task new` and `adr new` reserve their IDs automatically.
+`task new`, `spec new` and `adr new` reserve their IDs automatically.
 
 ### `mwp adr new <title>` / `mwp adr list`
 
@@ -359,6 +359,33 @@ Prints the next free ID: the highest number found in MWP files, module test fold
 | `--modules a,b` | (`new`) Modules governed by the decision |
 | `--supersedes ADR-XXXX` | (`new`) Marks that ADR `superseded` with `superseded_by:` and today's date |
 | `--status <s>` | (`list`) Only this status |
+
+### `mwp module new <id>` / `mwp module folder <a/b>`
+
+`module new` creates `modules/<id>.md` from the template with `code: []` and `tests: []`, then updates `map.md`. Module IDs are unique across folders. `module folder` creates a folder for modules; folder names follow the ID rule (lowercase words joined by `-`).
+
+| Option | Effect |
+|---|---|
+| `--summary <text>` | (required) The module's responsibility, in one line |
+| `--type domain\|ui\|infra` | Default `domain` |
+| `--folder a/b` | Creates the module in `modules/a/b/` |
+
+### `mwp spec new <title>`
+
+Creates an active SPEC in `specs/` with the next SP- ID.
+
+| Option | Effect |
+|---|---|
+| `--owner <module \| T-XXXX>` | (required) The module or task the SPEC belongs to |
+| `--lifetime durable\|transient` | Default `durable` |
+
+### `mwp delete <id>`
+
+Deletes a module, a SPEC or a task that is not done (done tasks are history and stay). A task's claim and locks are freed; deleting a module updates `map.md`. Tasks can also be named by their external code.
+
+| Option | Effect |
+|---|---|
+| `--yes` | Deletes without asking. Required when not run from a terminal, so an agent or a script never deletes by accident |
 
 ### `mwp remap`
 
