@@ -12,6 +12,7 @@ use mwp_core::lint::{lint, Report};
 use mwp_core::ops;
 use mwp_core::scaffold::{self, AGENTS};
 use mwp_core::state::{self, Claim};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -21,13 +22,15 @@ const REFRESH: Duration = Duration::from_secs(2);
 
 const COLUMNS: [(&str, &str); 5] = [("open", "Open"), ("in_progress", "In progress"), ("blocked", "Blocked"), ("review", "Review"), ("done", "Done")];
 const PROJECT_FILES: [&str; 4] = ["PROJECT.md", "constitution.md", "map.md", "glossary.md"];
+/// Explorer order. The two task folders are drawn last, as "Open" and "Done" under one "Tasks" group.
 const SECTIONS: [(&str, &str, MaterialIcon); 5] = [
     ("Modules", "modules", ICON_EXTENSION),
-    ("Open tasks", "tasks/open", ICON_TASK),
-    ("Done tasks", "tasks/done", ICON_TASK_ALT),
     ("Specs", "specs", ICON_ARTICLE),
     ("Decisions", "decisions", ICON_GAVEL),
+    ("Open tasks", "tasks/open", ICON_TASK),
+    ("Done tasks", "tasks/done", ICON_TASK_ALT),
 ];
+const LIFETIMES: [(&str, &str); 2] = [("durable", "Lasting reference that stays with its owner"), ("transient", "Working document, incorporated or archived when done")];
 const MODULE_TYPES: [(&str, &str); 3] = [("domain", "Business rules"), ("ui", "Screens and components"), ("infra", "Storage, network, tooling")];
 const SIZES: [(&str, &str); 3] = [("S", "Small: a few lines, one module"), ("M", "Medium: a feature in one or two modules"), ("L", "Large: several modules, plan first")];
 const fn key(modifiers: egui::Modifiers, key: egui::Key) -> egui::KeyboardShortcut {
@@ -164,6 +167,8 @@ enum Dialog {
     Open { dir: String, error: String },
     NewTask { title: String, size: &'static str, modules: Vec<(String, bool)>, error: String },
     NewModule { id: String, kind: &'static str, summary: String, error: String },
+    /// `owners`: the modules, then the tasks not done.
+    NewSpec { title: String, owner: String, owners: Vec<String>, lifetime: &'static str, error: String },
     /// `label` names the file; `note` warns about an agent working on it.
     Delete { path: PathBuf, label: String, note: String, error: String },
 }
@@ -180,6 +185,8 @@ struct App {
     edit_cmd: Option<(EditCmd, u8)>,
     pending: Option<Action>,
     dialog: Option<Dialog>,
+    /// The last projects opened, newest first.
+    recent: Vec<PathBuf>,
     message: Option<String>,
     show_done: bool,
     show_problems: bool,
@@ -188,8 +195,9 @@ struct App {
 
 impl App {
     fn new(root: PathBuf) -> App {
-        App {
+        let mut app = App {
             view: load(&root),
+            recent: recent_file().and_then(|f| fs::read_to_string(f).ok()).map_or_else(Vec::new, |t| t.trim_start_matches('\u{feff}').lines().map(PathBuf::from).filter(|p| p.join("mwp").is_dir()).collect()),
             root,
             loaded: Instant::now(),
             tabs: Vec::new(),
@@ -202,6 +210,20 @@ impl App {
             show_done: false,
             show_problems: true,
             title: String::new(),
+        };
+        app.remember();
+        app
+    }
+
+    /// Puts the open project first in the recent list and saves the list.
+    fn remember(&mut self) {
+        if self.view.is_ok() {
+            self.recent = remember(&self.recent, &self.root);
+            if let Some(f) = recent_file() {
+                let text: String = self.recent.iter().map(|p| format!("{}\n", p.display())).collect();
+                // Losing the list is harmless: it is rebuilt as projects are opened.
+                let _ = fs::create_dir_all(f.parent().unwrap()).and_then(|_| fs::write(f, text));
+            }
         }
     }
 
@@ -284,6 +306,7 @@ impl App {
                 self.root = dir;
                 (self.tabs, self.active) = (Vec::new(), None);
                 self.reload();
+                self.remember();
                 if open_project {
                     self.apply(ctx, Action::Open(self.root.join("mwp/PROJECT.md")));
                 }
@@ -329,6 +352,19 @@ impl App {
         Some(Dialog::NewTask { title: String::new(), size: "M", modules, error: String::new() })
     }
 
+    /// New SPEC, owned by the module or task open in the editor when there is one.
+    fn new_spec_dialog(&self) -> Option<Dialog> {
+        let v = self.view.as_ref().ok()?;
+        let mut modules: Vec<&Doc> = v.project.of_kind("module").collect();
+        modules.sort_by(|a, b| a.id().cmp(b.id()));
+        let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") != "done").collect();
+        tasks.sort_by_key(|t| id_num(t.id()));
+        let all: Vec<&Doc> = modules.into_iter().chain(tasks).collect();
+        let open = self.current().and_then(|e| all.iter().find(|d| d.path == e.path));
+        let owner = open.or(all.first()).map_or(String::new(), |d| d.id().to_string());
+        Some(Dialog::NewSpec { title: String::new(), owner, owners: all.iter().map(|d| d.id().to_string()).collect(), lifetime: "durable", error: String::new() })
+    }
+
     /// Asks before deleting; says when an agent works on the task or open tasks use the module.
     fn delete_dialog(&self, path: PathBuf) -> Option<Dialog> {
         let v = self.view.as_ref().ok()?;
@@ -354,6 +390,7 @@ impl App {
         let mut close = false;
         let mut deleted: Option<PathBuf> = None;
         let root = self.root.clone();
+        let recent = self.recent.clone();
         match self.dialog.as_mut()? {
             Dialog::NewTask { title, size, modules, error } => {
                 egui::Modal::new(egui::Id::unique("new-task")).show(ctx, |ui| {
@@ -389,8 +426,7 @@ impl App {
                         if ui.add_enabled(!title.trim().is_empty(), primary(ui, "Create")).clicked() {
                             let chosen: Vec<&str> = modules.iter().filter(|m| m.1).map(|m| m.0.as_str()).collect();
                             match Project::open(&root).and_then(|p| ops::task_new(&p, title, size, &[("modules", Some(&chosen.join(",")))])) {
-                                // The first line is `create mwp/tasks/open/T-0007-x.md (size M, status: open)`.
-                                Ok(lines) => action = lines.iter().find_map(|l| l.strip_prefix("create ")?.split(" (").next()).map(|rel| Action::Open(root.join(rel))),
+                                Ok(lines) => action = created(&root, &lines),
                                 Err(e) => *error = e,
                             }
                         }
@@ -434,6 +470,49 @@ impl App {
                     });
                 });
             }
+            Dialog::NewSpec { title, owner, owners, lifetime, error } => {
+                egui::Modal::new(egui::Id::unique("new-spec")).show(ctx, |ui| {
+                    ui.set_width(480.0);
+                    dialog_title(ui, ICON_ARTICLE, "New SPEC");
+                    ui.weak("Created in mwp/specs/ with the next free ID, from the SPEC template.");
+                    ui.add_space(12.0);
+                    section(ui, "SPEC", |ui| {
+                        ui.label("Title");
+                        ui.add(egui::TextEdit::singleline(title).hint_text("What it specifies").desired_width(f32::INFINITY));
+                        ui.add_space(6.0);
+                        ui.label("Lifetime");
+                        ui.horizontal(|ui| {
+                            for (l, _) in LIFETIMES {
+                                ui.selectable_value(lifetime, l, format!("  {l}  "));
+                            }
+                        });
+                        ui.weak(LIFETIMES.iter().find(|l| l.0 == *lifetime).map_or("", |l| l.1));
+                    });
+                    section(ui, "Owner", |ui| {
+                        if owners.is_empty() {
+                            ui.weak("No module or task yet: create one first.");
+                        } else {
+                            ui.weak("The module or task this SPEC belongs to.");
+                            egui::ComboBox::from_id_salt("spec-owner").selected_text(owner.as_str()).width(ui.available_width()).show_ui(ui, |ui| {
+                                for o in owners.iter() {
+                                    ui.selectable_value(owner, o.clone(), o.as_str());
+                                }
+                            });
+                        }
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        if ui.add_enabled(!title.trim().is_empty() && !owner.is_empty(), primary(ui, "Create")).clicked() {
+                            match Project::open(&root).and_then(|p| ops::spec_new(&p, title, owner, lifetime)) {
+                                Ok(lines) => action = created(&root, &lines),
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close = ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
             Dialog::Delete { path, label, note, error } => {
                 egui::Modal::new(egui::Id::unique("delete")).show(ctx, |ui| {
                     ui.set_width(420.0);
@@ -469,10 +548,7 @@ impl App {
                         ui.label("Folder");
                         right_row(ui, |ui| {
                             if ui.button("Browse…").clicked() {
-                                let start = Path::new(dir.trim());
-                                let dialog = rfd::FileDialog::new().set_title("Project folder");
-                                let dialog = if start.is_dir() { dialog.set_directory(start) } else { dialog };
-                                if let Some(picked) = dialog.pick_folder() {
+                                if let Some(picked) = pick_folder(dir) {
                                     // Follow the folder name unless the user typed a name of their own.
                                     if name.trim().is_empty() || *name == folder_name(Path::new(dir.trim())) {
                                         *name = folder_name(&picked);
@@ -534,19 +610,48 @@ impl App {
             }
             Dialog::Open { dir, error } => {
                 egui::Modal::new(egui::Id::unique("open-project")).show(ctx, |ui| {
-                    ui.set_width(460.0);
+                    ui.set_width(540.0);
                     dialog_title(ui, ICON_FOLDER_OPEN, "Open MWP project");
-                    ui.label("The folder that contains mwp/.");
-                    ui.add(egui::TextEdit::singleline(dir).desired_width(f32::INFINITY));
+                    ui.weak("The folder that contains mwp/.");
+                    ui.add_space(12.0);
+                    let mut open = |folder: PathBuf, error: &mut String| match Project::open(&folder) {
+                        Ok(_) => action = Some(Action::Project(folder, false)),
+                        Err(e) => *error = format!("{e}. Use File > New project to create one."),
+                    };
+                    let mut chosen: Option<PathBuf> = None;
+                    section(ui, "Folder", |ui| {
+                        right_row(ui, |ui| {
+                            if ui.button("Browse…").clicked() {
+                                // A picked folder opens at once; a wrong one shows why below.
+                                chosen = pick_folder(dir);
+                                if let Some(f) = &chosen {
+                                    *dir = f.display().to_string();
+                                }
+                            }
+                            ui.add(egui::TextEdit::singleline(dir).hint_text("Folder that contains mwp/").desired_width(f32::INFINITY));
+                        });
+                        let folder = Path::new(dir.trim());
+                        match () {
+                            _ if dir.trim().is_empty() => ui.weak("Type a folder or browse for it."),
+                            _ if folder.join("mwp").is_dir() => ui.weak("MWP project found."),
+                            _ => ui.colored_label(ui.visuals().warn_fg_color, "No mwp/ in this folder."),
+                        };
+                    });
+                    if !recent.is_empty() {
+                        section(ui, "Recent", |ui| {
+                            if let Some(f) = recent_list(ui, &recent) {
+                                chosen = Some(f);
+                            }
+                        });
+                    }
+                    if let Some(f) = chosen {
+                        open(f, error);
+                    }
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add(primary(ui, "Open")).clicked() {
-                            let folder = PathBuf::from(dir.trim());
-                            match Project::open(&folder) {
-                                Ok(_) => action = Some(Action::Project(folder, false)),
-                                Err(e) => *error = format!("{e}. Use File > New project to create one."),
-                            }
+                        if ui.add_enabled(!dir.trim().is_empty(), primary(ui, "Open")).clicked() {
+                            open(PathBuf::from(dir.trim()), error);
                         }
                         close = ui.add(secondary("Cancel")).clicked();
                     });
@@ -570,6 +675,11 @@ impl App {
     }
 }
 
+/// Opens the file an `ops::*_new` reported; its first line is `create mwp/... (details)`.
+fn created(root: &Path, lines: &[String]) -> Option<Action> {
+    lines.iter().find_map(|l| l.strip_prefix("create ")?.split(" (").next()).map(|rel| Action::Open(root.join(rel)))
+}
+
 fn dialog_title(ui: &mut egui::Ui, icon: MaterialIcon, title: &str) {
     ui.horizontal(|ui| {
         ui.label(icon.rich_text().size(24.0).color(ui.visuals().hyperlink_color));
@@ -590,6 +700,54 @@ fn primary(ui: &egui::Ui, text: &str) -> egui::Button<'static> {
 
 fn secondary(text: &str) -> egui::Button<'static> {
     egui::Button::new(text.to_string()).min_size(egui::vec2(96.0, 0.0))
+}
+
+const RECENT_MAX: usize = 5;
+
+/// Where the recent projects are kept: `<config>/mwp-gui/recent.txt`, one folder per line.
+/// Not `<config>/mwp/`: that would make the config folder itself look like an MWP project.
+fn recent_file() -> Option<PathBuf> {
+    if cfg!(test) {
+        return None; // tests never touch the user's list
+    }
+    let config = std::env::var_os("APPDATA").or_else(|| std::env::var_os("XDG_CONFIG_HOME")).map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(config.join("mwp-gui").join("recent.txt"))
+}
+
+/// The list with `dir` first, without duplicates or folders that lost their mwp/, at most five.
+fn remember(list: &[PathBuf], dir: &Path) -> Vec<PathBuf> {
+    let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let mut out = vec![dir.clone()];
+    out.extend(list.iter().filter(|p| **p != dir && p.join("mwp").is_dir()).cloned());
+    out.truncate(RECENT_MAX);
+    out
+}
+
+/// The recent projects as rows (name, then folder); returns the one clicked.
+fn recent_list(ui: &mut egui::Ui, recent: &[PathBuf]) -> Option<PathBuf> {
+    let mut clicked = None;
+    for p in recent {
+        let path = p.display().to_string();
+        ui.horizontal(|ui| {
+            let name = (ICON_FOLDER.rich_text().color(ui.visuals().hyperlink_color), RichText::new(folder_name(p)).strong());
+            let a = ui.add(egui::Button::new(name).frame(false)).on_hover_text(&path).clicked();
+            // Truncated: a long path would otherwise widen the dialog.
+            let b = ui.add(egui::Label::new(RichText::new(&path).weak()).truncate().sense(egui::Sense::click())).on_hover_text(&path).clicked();
+            if a || b {
+                clicked = Some(p.clone());
+            }
+        });
+    }
+    clicked
+}
+
+/// The native folder picker, starting at `start` when it is a folder.
+fn pick_folder(start: &str) -> Option<PathBuf> {
+    let start = Path::new(start.trim());
+    let dialog = rfd::FileDialog::new().set_title("Project folder");
+    let dialog = if start.is_dir() { dialog.set_directory(start) } else { dialog };
+    dialog.pick_folder()
 }
 
 fn folder_name(path: &Path) -> String {
@@ -663,6 +821,43 @@ fn card(ui: &mut egui::Ui, t: &Doc) -> egui::Response {
     r
 }
 
+const TAB_HEIGHT: f32 = 34.0;
+
+/// One editor tab, drawn like VS Code: flat, the open one in the editor colour with an accent
+/// on top, the close button inside (shown on hover or when open, a dot while unsaved).
+/// Returns (clicked, close clicked).
+fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32), name: &str, dirty: bool, path: &str) -> (bool, bool) {
+    let v = ui.visuals().clone();
+    let (pad, gap, close_w) = (12.0, 6.0, 20.0);
+    let text = if active { v.strong_text_color() } else { v.weak_text_color() };
+    let icon_g = ui.painter().layout_no_wrap(icon.codepoint.to_string(), egui::FontId::new(16.0, icon.font_family()), tint);
+    let name_g = ui.painter().layout_no_wrap(name.to_string(), egui::TextStyle::Body.resolve(ui.style()), text);
+    let width = pad + icon_g.size().x + gap + name_g.size().x + gap + close_w + pad / 2.0;
+    let (rect, r) = ui.allocate_exact_size(egui::vec2(width, TAB_HEIGHT), egui::Sense::click());
+    r.widget_info(|| egui::WidgetInfo::selected(egui::accesskit::Role::Tab, true, active, name));
+    let hovered = ui.rect_contains_pointer(rect);
+    let close_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - pad / 2.0 - close_w / 2.0, rect.center().y), egui::vec2(close_w, close_w));
+    {
+        let p = ui.painter();
+        let fill = if active { v.panel_fill } else if hovered { v.widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT };
+        p.rect_filled(rect, 0.0, fill);
+        if active {
+            p.hline(rect.x_range(), rect.top() + 1.0, egui::Stroke::new(2.0, v.selection.stroke.color));
+        }
+        p.vline(rect.right() - 0.5, rect.y_range(), v.widgets.noninteractive.bg_stroke);
+        let x = rect.left() + pad;
+        p.galley(egui::pos2(x, rect.center().y - icon_g.size().y / 2.0), icon_g.clone(), tint);
+        p.galley(egui::pos2(x + icon_g.size().x + gap, rect.center().y - name_g.size().y / 2.0), name_g, text);
+        if dirty && !hovered {
+            p.circle_filled(close_rect.center(), 4.0, text);
+        }
+    }
+    let shown = (active || hovered) && !(dirty && !hovered);
+    let close = egui::Button::new(ICON_CLOSE.rich_text().size(16.0).color(if shown { text } else { Color32::TRANSPARENT })).frame(false);
+    let close = ui.put(close_rect, close).on_hover_text("Close").clicked();
+    (r.on_hover_text(path).clicked(), close)
+}
+
 /// A collapsible explorer section: icon, title and count, with an optional "+" on the right.
 /// Clicking the title toggles it too. Returns true when "+" is clicked.
 fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, open: bool, add: Option<&str>, body: impl FnOnce(&mut egui::Ui)) -> bool {
@@ -721,7 +916,7 @@ impl eframe::App for App {
         let (mut save, mut save_all) = (false, false);
         let mut reload = false;
         let (mut new_dialog, mut open_dialog) = (false, false);
-        let (mut new_task, mut new_module) = (false, false);
+        let (mut new_task, mut new_module, mut new_spec) = (false, false, false);
         let mut ask_delete: Option<PathBuf> = None;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
@@ -742,6 +937,7 @@ impl eframe::App for App {
                     let project = self.view.is_ok();
                     new_task = ui.add_enabled(project, egui::Button::new(ic(ICON_ADD_TASK, "New task…"))).clicked();
                     new_module = ui.add_enabled(project, egui::Button::new(ic(ICON_EXTENSION, "New module…"))).clicked();
+                    new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, "New SPEC…"))).clicked();
                     ui.separator();
                     let dirty = self.current().is_some_and(Editor::dirty);
                     save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, "Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
@@ -819,7 +1015,23 @@ impl eframe::App for App {
                         ui.add_space(12.0);
                         new_dialog = ui.button(ic(ICON_CREATE_NEW_FOLDER, "New project…")).clicked();
                         open_dialog = ui.button(ic(ICON_FOLDER_OPEN, "Open project…")).clicked();
+                        ui.add_space(24.0);
                     });
+                    if !self.recent.is_empty() {
+                        // A centred card; rows inside are left-aligned.
+                        let w = ui.available_width().min(560.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space((ui.available_width() - w) / 2.0);
+                            ui.vertical(|ui| {
+                                ui.set_width(w);
+                                section(ui, "Recent", |ui| {
+                                    if let Some(dir) = recent_list(ui, &self.recent) {
+                                        action = Some(Action::Project(dir, false));
+                                    }
+                                });
+                            });
+                        });
+                    }
                 });
             }
             Ok(v) => {
@@ -853,13 +1065,7 @@ impl eframe::App for App {
                                 ui.weak("No task in progress.");
                             }
                         });
-                        for (label, icon, entries) in &v.tree {
-                            let add = match *label {
-                                "Modules" => Some("New module"),
-                                "Open tasks" => Some("New task"),
-                                _ => None,
-                            };
-                            let plus = group(ui, *icon, label, entries.len(), *label != "Done tasks", add, |ui| {
+                        let mut files = |ui: &mut egui::Ui, entries: &[Entry]| {
                                 for e in entries {
                                     let open = self.current().is_some_and(|ed| ed.path == e.path);
                                     let (icon, color) = file_icon(ui, &v.project, &e.path);
@@ -887,11 +1093,26 @@ impl eframe::App for App {
                                 if entries.is_empty() {
                                     ui.weak("Empty");
                                 }
-                            });
-                            if plus {
-                                (new_module, new_task) = (*label == "Modules", *label == "Open tasks");
+                        };
+                        for (label, icon, entries) in v.tree.iter().filter(|s| !s.0.ends_with("tasks")) {
+                            let add = match *label {
+                                "Modules" => Some("New module"),
+                                "Specs" => Some("New SPEC"),
+                                _ => None,
+                            };
+                            if group(ui, *icon, label, entries.len(), true, add, |ui| files(ui, entries)) {
+                                (new_module, new_spec) = (*label == "Modules", *label == "Specs");
                             }
                         }
+                        // Tasks last, as one group with Open and Done inside.
+                        let tasks = |name: &str| v.tree.iter().find(|s| s.0 == name).map(|s| (s.1, &s.2[..])).unwrap();
+                        let ((open_icon, open), (done_icon, done)) = (tasks("Open tasks"), tasks("Done tasks"));
+                        let mut plus = false;
+                        group(ui, ICON_ASSIGNMENT, "Tasks", open.len() + done.len(), true, None, |ui| {
+                            plus = group(ui, open_icon, "Open", open.len(), true, Some("New task"), |ui| files(ui, open));
+                            group(ui, done_icon, "Done", done.len(), false, None, |ui| files(ui, done));
+                        });
+                        new_task |= plus;
                     });
                 });
 
@@ -918,25 +1139,29 @@ impl eframe::App for App {
                 }
 
                 egui::CentralPanel::default().show(ui, |ui| {
-                    egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            if ui.selectable_label(self.active.is_none(), ic(ICON_VIEW_KANBAN, "Board")).clicked() {
-                                action = Some(Action::Board);
-                            }
-                            for (i, t) in self.tabs.iter().enumerate() {
-                                ui.separator();
-                                let (icon, color) = file_icon(ui, &v.project, &t.path);
-                                let name = RichText::new(if t.dirty() { format!("{} •", t.name()) } else { t.name() });
-                                if ui.selectable_label(self.active == Some(i), (icon.rich_text().color(color), name)).on_hover_text(v.project.rel(&t.path)).clicked() {
-                                    action = Some(Action::Open(t.path.clone()));
+                    // The tab strip (the board is in the explorer and the View menu).
+                    if !self.tabs.is_empty() {
+                        let strip = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), TAB_HEIGHT));
+                        let vis = ui.visuals();
+                        ui.painter().rect_filled(strip, 0.0, vis.panel_fill.lerp_to_gamma(vis.text_color(), 0.05));
+                        ui.painter().hline(strip.x_range(), strip.bottom() - 0.5, vis.widgets.noninteractive.bg_stroke);
+                        egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                for (i, t) in self.tabs.iter().enumerate() {
+                                    let icon = file_icon(ui, &v.project, &t.path);
+                                    let (open, close) = tab(ui, self.active == Some(i), icon, &t.name(), t.dirty(), &v.project.rel(&t.path));
+                                    if open {
+                                        action = Some(Action::Open(t.path.clone()));
+                                    }
+                                    if close {
+                                        action = Some(Action::CloseTab(i));
+                                    }
                                 }
-                                if ui.add(egui::Button::new(ICON_CLOSE.rich_text()).frame(false)).on_hover_text("Close").clicked() {
-                                    action = Some(Action::CloseTab(i));
-                                }
-                            }
+                            });
                         });
-                    });
-                    ui.separator();
+                        ui.add_space(6.0);
+                    }
                     match self.active.and_then(|i| self.tabs.get_mut(i)) {
                     Some(ed) => {
                         // File header: icon, title, path and what the front matter says about it.
@@ -1024,6 +1249,9 @@ impl eframe::App for App {
         }
         if new_module && self.view.is_ok() {
             self.dialog = Some(Dialog::NewModule { id: String::new(), kind: "domain", summary: String::new(), error: String::new() });
+        }
+        if new_spec {
+            self.dialog = self.new_spec_dialog();
         }
         if let Some(path) = ask_delete {
             self.dialog = self.delete_dialog(path);
@@ -1127,6 +1355,24 @@ mod tests {
         assert!(app.save_tab(0));
         assert_eq!(fs::read_to_string(&f).unwrap(), "a\r\nb\r\nc\r\n");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn recent_projects_newest_first_at_most_five() {
+        let base = std::env::temp_dir().join(format!("mwp-gui-recent-{}", std::process::id()));
+        let dirs: Vec<PathBuf> = (0..7).map(|i| base.join(format!("p{i}"))).collect();
+        dirs.iter().for_each(|d| fs::create_dir_all(d.join("mwp")).unwrap());
+        let mut list = Vec::new();
+        for d in &dirs {
+            list = remember(&list, d);
+        }
+        assert_eq!(list, dirs[2..].iter().rev().cloned().collect::<Vec<_>>());
+        list = remember(&list, &dirs[4]); // reopened: moves to the front, no duplicate
+        assert_eq!(list[..2], [dirs[4].clone(), dirs[6].clone()]);
+        assert_eq!(list.len(), 5);
+        fs::remove_dir_all(dirs[6].join("mwp")).unwrap(); // a folder that lost its project drops out
+        assert!(!remember(&list, &dirs[0]).contains(&dirs[6]));
+        let _ = fs::remove_dir_all(&base);
     }
 
     /// Drives the real UI headless: tabs, edit, save, save all, Edit menu, the unsaved guard, New project.
@@ -1240,6 +1486,25 @@ mod tests {
         h.run_steps(3);
         assert!(!new_task.exists() && h.state().dialog.is_none());
         assert!(h.state().tabs.iter().all(|t| t.path != new_task));
+
+        // File > New SPEC: owned by the module open in the editor.
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(module.clone()));
+        h.get_all_by_label("File").next().unwrap().click();
+        h.run_steps(3);
+        h.get_by_label_contains("New SPEC…").click();
+        h.run_steps(30);
+        if let Some(Dialog::NewSpec { title, owner, .. }) = h.state_mut().dialog.as_mut() {
+            assert_eq!(owner, "user-auth");
+            *title = "Session rules".into();
+        } else {
+            panic!("the New SPEC dialog did not open");
+        }
+        h.run_steps(3);
+        h.get_by_label("Create").click();
+        h.run_steps(3);
+        let spec = root.join("mwp/specs/SP-0001-session-rules.md");
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(spec.clone()));
+        assert!(fs::read_to_string(&spec).unwrap().contains("owner: user-auth"));
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

@@ -54,7 +54,8 @@ pub fn read(path: &Path) -> Option<String> {
 }
 
 pub fn split_front_matter(text: &str) -> Option<(&str, &str)> {
-    let rest = text.strip_prefix("---\n")?;
+    // The editor keeps a file's BOM so it saves it back unchanged.
+    let rest = text.trim_start_matches('\u{feff}').strip_prefix("---\n")?;
     let end = rest.find("\n---")?;
     let after = &rest[end + 4..];
     Some((&rest[..end], after.strip_prefix('\n').unwrap_or(after)))

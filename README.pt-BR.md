@@ -95,14 +95,14 @@ O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templat
 
 O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o trabalho:
 
-- **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos, tasks abertas e concluídas, SPECs, ADRs), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
+- **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
 - **Editor de Markdown** com abas: código com destaque e números de linha, barra de formatação (títulos, negrito, itálico, código, listas, checklists, citações, links) e preview ao vivo, lado a lado ou sozinho. O front matter aparece como tabela de propriedades no preview.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), os comandos padrão do **Edit** (desfazer, refazer, recortar, copiar, colar, selecionar tudo) e um aviso antes de perder alterações não salvas.
 - **Quadro** das tasks por status; um cartão abre a task.
 - **Problemas** do `mwp lint`; uma linha abre o arquivo.
-- **New task** e **New module** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`.
+- **New task**, **New module** e **New SPEC** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md` e uma SPEC recebe um módulo ou uma task como dono.
 - **Delete** (cabeçalho do arquivo, botão direito no explorador ou num cartão, menu File) apaga um módulo, uma SPEC ou uma task aberta depois de confirmar; os locks da task são liberados e o `map.md` acompanha os módulos.
-- **File > New project** cria um projeto (pasta, nome, agentes, skills), como o `mwp init`.
+- **File > New project** cria um projeto (pasta, nome, agentes, skills), como o `mwp init`. **File > Open project** procura a pasta ou reabre um dos 5 projetos recentes, que também aparecem na tela inicial.
 
 Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram.
 

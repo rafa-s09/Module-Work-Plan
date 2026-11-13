@@ -239,10 +239,13 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) {
         Mode::Edit => source(ui, ed, id),
         Mode::Preview => preview(ui, ed),
         Mode::Split => {
+            let area = ui.max_rect();
             ui.columns(2, |cols| {
                 source(&mut cols[0], ed, id);
                 preview(&mut cols[1], ed);
             });
+            // A line where the source ends and the preview starts, in the gap between the columns.
+            ui.painter().vline(area.center().x, area.y_range(), ui.visuals().widgets.noninteractive.bg_stroke);
         }
     });
     // Align::Min: a centred right-to-left layout would take all the height it is offered.
@@ -361,5 +364,9 @@ mod tests {
         let text = "---\nkind: task\n---\n# T — Title\n- [ ] item with `code` and <placeholder>\n```\nfn x() {}\n```\n";
         let p = palette(&egui::Visuals::dark());
         assert_eq!(highlight(text, FontId::monospace(12.0), &p).text, text);
+        // A BOM does not hide the front matter.
+        let bom = format!("\u{feff}{text}");
+        assert_eq!(highlight(&bom, FontId::monospace(12.0), &p).text, bom);
+        assert_eq!(split_front_matter(&bom).map(|f| f.0), Some("kind: task"));
     }
 }

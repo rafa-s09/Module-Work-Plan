@@ -153,6 +153,30 @@ pub fn module_new(p: &Project, id: &str, kind: &str, summary: &str) -> Lines {
     Ok(vec![format!("create {}", p.rel(&path)), refresh_map(&p.root)])
 }
 
+/// Creates an active SPEC. `owner` is the module or task it belongs to; `lifetime` is durable or transient.
+pub fn spec_new(p: &Project, title: &str, owner: &str, lifetime: &str) -> Lines {
+    let (title, owner) = (title.trim(), owner.trim());
+    if title.is_empty() {
+        return Err("the SPEC needs a title".into());
+    }
+    if !["durable", "transient"].contains(&lifetime) {
+        return Err("the SPEC lifetime must be durable or transient".into());
+    }
+    if p.by_id("module", owner).is_none() && p.by_id("task", owner).is_none() {
+        return Err(format!("owner `{owner}` is not a module or task"));
+    }
+    let id = format!("SP-{:04}", state::allocate(p, "SP").map_err(|e| e.to_string())?);
+    let mut text = template("mwp/specs/_template.md")
+        .replace("id: <SP-XXXX>", &format!("id: {id}"))
+        .replace("# <SP-XXXX> — <Title>", &format!("# {id} — {title}"));
+    for (key, value) in [("lifetime", lifetime), ("owner", owner), ("created", &today()), ("updated", &today())] {
+        text = set_field(&text, key, value);
+    }
+    let path = p.mwp.join("specs").join(format!("{id}-{}.md", slug(title)));
+    write(&path, text)?;
+    Ok(vec![format!("create {} (status: active, owner: {owner})", p.rel(&path))])
+}
+
 /// What may be deleted: modules, specs and tasks not done yet. Templates (`_*`) stay.
 pub fn deletable(p: &Project, path: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -261,6 +285,13 @@ mod tests {
         assert!(module_new(&open(), "user-auth", "domain", "x").is_err() && module_new(&open(), "Bad Id", "domain", "x").is_err());
         assert!(read(&root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
         assert!(!lint(&open()).errors.iter().any(|e| e.contains("map.md") || e.contains("user-auth")), "{:?}", lint(&open()).errors);
+        // A SPEC needs an owner that exists; the new one passes lint.
+        assert!(spec_new(&open(), "Session rules", "nobody", "durable").is_err());
+        spec_new(&open(), "Session rules", "user-auth", "durable").unwrap();
+        let sp = open().by_id("spec", "SP-0001").unwrap().path.clone();
+        assert!(sp.ends_with("specs/SP-0001-session-rules.md") && open().by_id("spec", "SP-0001").unwrap().get("owner") == "user-auth");
+        assert!(!lint(&open()).errors.iter().any(|e| e.contains("SP-0001")), "{:?}", lint(&open()).errors);
+        delete(&open(), &sp).unwrap();
         delete(&open(), &root.join("mwp/modules/user-auth.md")).unwrap();
         assert!(!read(&root.join("mwp/map.md")).unwrap().contains("user-auth"));
 
