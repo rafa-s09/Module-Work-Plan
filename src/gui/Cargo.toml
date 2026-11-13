@@ -1,0 +1,16 @@
+[package]
+name = "mwp-gui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Desktop board for MWP (Module Work Plan): tasks, agents, locked modules and lint."
+license = "Apache-2.0"
+
+[[bin]]
+name = "mwp-gui"
+path = "src/main.rs"
+
+[dependencies]
+# The core does all the work; the GUI only shows it.
+mwp = { path = "../client" }
+eframe = "0.37"

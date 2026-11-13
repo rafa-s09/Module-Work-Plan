@@ -91,12 +91,23 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 
 The CLI is optional: everything it does can be done by hand following the templates.
 
+## Board (GUI)
+
+`mwp-gui` is an optional desktop window for the person following the work. It shows the tasks by status, which agent holds each task in progress, the locked modules and the lint result, and follows the project as agents change it. It is read-only.
+
+```bash
+cargo install --path src/gui --locked
+```
+
+Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`.
+
 ## Repository
 
 | Path | Contents |
 |---|---|
 | [`templates/`](templates) | Files `mwp init` copies into a project |
 | [`src/client/`](src/client) | The `mwp` CLI and its core library (Rust, no dependencies, no git needed) |
+| [`src/gui/`](src/gui) | `mwp-gui`, the optional board (Rust, egui), built on the core library |
 | [`src/skill/mwp/`](src/skill/mwp) | Agent skill: the workflow, the CLI and resources in `content/` |
 | [`src/skill/module/`](src/skill/module) | Agent skill: create modules from existing code, or audit them against the code and ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Installers for macOS/Linux and Windows |

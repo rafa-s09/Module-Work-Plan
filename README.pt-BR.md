@@ -91,12 +91,23 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 
 O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templates.
 
+## Quadro (GUI)
+
+O `mwp-gui` é uma janela opcional para a pessoa que acompanha o trabalho. Mostra as tasks por status, qual agente está em cada task em andamento, os módulos bloqueados e o resultado do lint, e acompanha o projeto conforme os agentes o alteram. É somente leitura.
+
+```bash
+cargo install --path src/gui --locked
+```
+
+Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`.
+
 ## Repositório
 
 | Caminho | Conteúdo |
 |---|---|
 | [`templates/`](templates) | Arquivos que o `mwp init` copia para um projeto |
 | [`src/client/`](src/client) | O CLI `mwp` e sua biblioteca core (Rust, sem dependências, não precisa do git) |
+| [`src/gui/`](src/gui) | O `mwp-gui`, o quadro opcional (Rust, egui), feito sobre a biblioteca core |
 | [`src/skill/mwp/`](src/skill/mwp) | Skill do agente: o fluxo de trabalho, o CLI e os recursos em `content/` |
 | [`src/skill/module/`](src/skill/module) | Skill do agente: cria módulos a partir do código existente ou os audita contra o código e os ADRs |
 | [`src/install.sh`](src/install.sh), [`src/install.ps1`](src/install.ps1) | Instaladores para macOS/Linux e Windows |
