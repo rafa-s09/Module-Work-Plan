@@ -5,6 +5,7 @@ use super::*;
 pub const COLUMNS: [(&str, &str); 5] = [("open", "Open"), ("in_progress", "In progress"), ("blocked", "Blocked"), ("review", "Review"), ("done", "Done")];
 
 /// A task lifecycle step asked from the file header or a card; the task by ID.
+#[derive(Debug, PartialEq)]
 pub enum TaskCmd {
     Start(String),
     Close(String),
@@ -99,14 +100,26 @@ pub fn card(ui: &mut egui::Ui, t: &Doc) -> egui::Response {
         .response
         .rect;
     ui.add_space(4.0);
-    let r = ui.interact(rect, ui.scope_id().with(("card", t.id())), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let r = ui.interact(rect, ui.scope_id().with(("card", t.id())), egui::Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
     if r.hovered() {
         ui.painter().rect_stroke(rect, 6.0, ui.visuals().widgets.hovered.bg_stroke, egui::StrokeKind::Inside);
     }
     r
 }
 
-/// The board: one column per status, a card per task.
+/// The step a card dropped from the `from` column on the `to` column asks for: the same ones its
+/// menu offers (Start, Close for a task in progress or in review, a release). None for the rest.
+pub fn drop_cmd(id: &str, from: &str, to: &str) -> Option<TaskCmd> {
+    match to {
+        _ if from == to || from == "done" => None,
+        "in_progress" => Some(TaskCmd::Start(id.into())),
+        "done" => matches!(from, "in_progress" | "review").then(|| TaskCmd::Close(id.into())),
+        _ => RELEASE.iter().find(|r| r.0 == to).map(|r| TaskCmd::Release(id.into(), r.0)),
+    }
+}
+
+/// The board: one column per status, a card per task. A card dragged to another column changes
+/// the task's status; the column it can go to is outlined while it is dragged.
 pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) {
     ui.horizontal(|ui| {
         ui.label(ICON_VIEW_KANBAN.rich_text().size(24.0).color(ui.visuals().hyperlink_color));
@@ -118,8 +131,10 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) 
     });
     ui.add_space(6.0);
     let columns: Vec<_> = COLUMNS.iter().filter(|c| c.0 != "done" || *show_done).collect();
+    let (mut rects, mut dragged, mut dropped) = (Vec::new(), None, None);
     ui.columns(columns.len(), |cols| {
         for (ui, (status, label)) in cols.iter_mut().zip(columns) {
+            rects.push((*status, ui.max_rect()));
             let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") == *status).collect();
             tasks.sort_by_key(|t| id_num(t.id()));
             ui.horizontal(|ui| {
@@ -134,6 +149,12 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) 
                     let r = card(ui, t);
                     if r.clicked() {
                         ask.action = Some(Action::Open(t.path.clone()));
+                    }
+                    if r.dragged() {
+                        dragged = Some(t);
+                    }
+                    if r.drag_stopped() {
+                        dropped = Some(t);
                     }
                     r.context_menu(|ui| {
                         if ui.button(ic(ICON_EDIT, "Open")).clicked() {
@@ -150,6 +171,24 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) 
             });
         }
     });
+    let Some(pointer) = ui.ctx().pointer_latest_pos() else { return };
+    let target = |t: &Doc| rects.iter().find(|r| r.1.contains(pointer)).and_then(|r| drop_cmd(t.id(), t.get("status"), r.0).map(|cmd| (r.1, cmd)));
+    if let Some(t) = dragged {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if let Some((rect, _)) = target(t) {
+            ui.painter().rect_stroke(rect.expand(2.0), 6.0, egui::Stroke::new(2.0, ui.visuals().selection.stroke.color), egui::StrokeKind::Outside);
+        }
+        // The card follows the pointer.
+        egui::Area::new(egui::Id::unique("dragged-card")).order(egui::Order::Tooltip).interactable(false).fixed_pos(pointer + egui::vec2(12.0, 8.0)).show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.strong(t.id());
+                ui.label(t.title());
+            });
+        });
+    }
+    if let Some(t) = dropped {
+        ask.task_cmd = target(t).map(|(_, cmd)| cmd);
+    }
 }
 
 impl App {
@@ -191,5 +230,20 @@ impl App {
                 Err(e) => self.dialog = notice(format!("Cannot change {id}"), e),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_card_asks_what_its_menu_offers() {
+        assert_eq!(drop_cmd("T-1", "open", "in_progress"), Some(TaskCmd::Start("T-1".into())));
+        assert_eq!(drop_cmd("T-1", "in_progress", "blocked"), Some(TaskCmd::Release("T-1".into(), "blocked")));
+        assert_eq!(drop_cmd("T-1", "review", "done"), Some(TaskCmd::Close("T-1".into())));
+        assert_eq!(drop_cmd("T-1", "open", "done"), None, "only a task in progress or in review closes");
+        assert_eq!(drop_cmd("T-1", "open", "open"), None);
+        assert_eq!(drop_cmd("T-1", "done", "open"), None, "a done task never moves");
     }
 }

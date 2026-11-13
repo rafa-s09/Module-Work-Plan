@@ -6,6 +6,7 @@ mod board;
 mod dialogs;
 mod editor;
 mod explorer;
+mod layout;
 mod search;
 mod tabs;
 
@@ -13,7 +14,9 @@ use board::*;
 use dialogs::*;
 use editor::{Editor, Mode};
 use explorer::*;
+use layout::{project_key, rel_to, Layout};
 use search::*;
+use std::collections::BTreeMap;
 use tabs::*;
 use eframe::egui::{self, Color32, RichText};
 use egui_material_icons::{icons::*, MaterialIcon};
@@ -135,6 +138,8 @@ struct App {
     show_search: bool,
     search: Search,
     title: String,
+    /// The tabs each project had open, kept between runs (see `layout`).
+    saved_tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
 }
 
 impl App {
@@ -157,6 +162,7 @@ impl App {
             show_search: false,
             search: Search::default(),
             title: String::new(),
+            saved_tabs: BTreeMap::new(),
         };
         app.remember();
         app
@@ -174,14 +180,37 @@ impl App {
         }
     }
 
-    /// The app with its icon font and a little more room than egui's default spacing.
-    fn start(ctx: &egui::Context, root: PathBuf) -> App {
-        egui_material_icons::initialize(ctx);
-        ctx.all_styles_mut(|s| {
+    /// The app with its icon font and a little more room than egui's default spacing, set up
+    /// as it was left last time.
+    fn start(cc: &eframe::CreationContext, root: PathBuf) -> App {
+        egui_material_icons::initialize(&cc.egui_ctx);
+        cc.egui_ctx.all_styles_mut(|s| {
             s.spacing.item_spacing = egui::vec2(8.0, 5.0);
             s.spacing.button_padding = egui::vec2(8.0, 3.0);
         });
-        App::new(root)
+        let mut app = App::new(root);
+        if let Some(text) = cc.storage.and_then(|s| s.get_string(layout::KEY)) {
+            let l = Layout::parse(&text);
+            (app.mode, app.show_done, app.show_problems, app.saved_tabs) = (l.mode, l.show_done, l.show_problems, l.tabs);
+            app.restore_tabs();
+        }
+        app
+    }
+
+    /// Records the open tabs of this project in `saved_tabs`.
+    fn keep_tabs(&mut self) {
+        if self.view.is_ok() {
+            let tabs = self.tabs.iter().map(|e| rel_to(&self.root, &e.path)).collect();
+            let active = self.current().map(|e| rel_to(&self.root, &e.path));
+            self.saved_tabs.insert(project_key(&self.root), (active, tabs));
+        }
+    }
+
+    /// Opens the tabs this project had last time, those whose file is still there.
+    fn restore_tabs(&mut self) {
+        let Some((active, tabs)) = self.saved_tabs.get(&project_key(&self.root)).cloned() else { return };
+        self.tabs = tabs.iter().filter_map(|r| Editor::open(&self.root.join(r)).ok()).collect();
+        self.active = active.and_then(|a| self.tabs.iter().position(|e| rel_to(&self.root, &e.path) == a));
     }
 
     fn reload(&mut self) {
@@ -273,10 +302,12 @@ impl App {
             }
             Action::MoveTab(..) => {}
             Action::Project(dir, open_project) => {
+                self.keep_tabs();
                 self.root = dir;
                 (self.tabs, self.active) = (Vec::new(), None);
                 self.reload();
                 self.remember();
+                self.restore_tabs();
                 if open_project {
                     self.apply(ctx, Action::Open(self.root.join("mwp/PROJECT.md")));
                 }
@@ -327,6 +358,13 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// Called by eframe now and then and on exit; the window and panels it keeps itself.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        self.keep_tabs();
+        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, tabs: self.saved_tabs.clone() };
+        storage.set_string(layout::KEY, l.text());
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         if self.loaded.elapsed() >= REFRESH {
@@ -772,12 +810,13 @@ fn main() -> eframe::Result {
         Some(dir) => PathBuf::from(dir),
         None => Project::find().map(|p| p.root).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default()),
     };
-    let mut viewport = egui::ViewportBuilder::default().with_inner_size([1280.0, 760.0]);
+    // The app id also names the folder of eframe's saved state: <config>/mwp-gui/, next to recent.txt.
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([1280.0, 760.0]).with_app_id("mwp-gui");
     if let Some(icon) = window_icon() {
         viewport = viewport.with_icon(icon);
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
-    eframe::run_native("MWP", options, Box::new(|cc| Ok(Box::new(App::start(&cc.egui_ctx, root)))))
+    eframe::run_native("MWP", options, Box::new(|cc| Ok(Box::new(App::start(cc, root)))))
 }
 
 #[cfg(test)]
@@ -855,7 +894,7 @@ mod tests {
         fs::write(&task, "---\nkind: task\nid: T-0001\nstatus: open\nsize: S\nmodules: []\n---\n# T-0001 — Add login\n").unwrap();
 
         let start = root.clone();
-        let mut h = Harness::builder().with_size([1280.0, 760.0]).build_eframe(move |cc| App::start(&cc.egui_ctx, start));
+        let mut h = Harness::builder().with_size([1280.0, 760.0]).build_eframe(move |cc| App::start(cc, start));
         h.run_steps(3);
 
         // Open from the explorer, type, save with Ctrl+S. Labels start with the file's icon.
