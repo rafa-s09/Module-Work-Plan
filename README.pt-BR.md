@@ -95,7 +95,7 @@ O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templat
 
 O `mwp-gui` é um editor de desktop opcional para a pessoa que acompanha o trabalho:
 
-- **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
+- **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos com suas subpastas, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas; o botão direito em Modules ou numa pasta cria ali um módulo ou uma pasta), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam.
 - **Editor de Markdown** com abas: código com destaque e números de linha, barra de formatação (títulos, negrito, itálico, código, listas, checklists, citações, links) e preview ao vivo, lado a lado ou sozinho. O front matter aparece como tabela de propriedades no preview.
 - **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), os comandos padrão do **Edit** (desfazer, refazer, recortar, copiar, colar, selecionar tudo) e um aviso antes de perder alterações não salvas.
 - **Quadro** das tasks por status; um cartão abre a task.

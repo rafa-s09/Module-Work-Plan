@@ -5,7 +5,7 @@ use crate::lint::{has_content, lint, Report};
 use crate::scaffold::template;
 use crate::state;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub type Lines = Result<Vec<String>, String>;
 
@@ -129,8 +129,36 @@ fn refresh_map(root: &Path) -> String {
     }
 }
 
-/// Creates a module from the template and adds it to `map.md`.
-pub fn module_new(p: &Project, id: &str, kind: &str, summary: &str) -> Lines {
+/// A folder under `mwp/modules/`, given as `a/b`; empty is `mwp/modules/` itself.
+/// Each part is lowercase words joined by `-`, so nothing can point outside the folder.
+fn modules_dir(p: &Project, folder: &str) -> Result<PathBuf, String> {
+    let mut dir = p.mwp.join("modules");
+    for part in folder.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        if slug(part) != part {
+            return Err(format!("folder `{part}`: use lowercase words joined by `-`"));
+        }
+        dir.push(part);
+    }
+    Ok(dir)
+}
+
+/// Creates a folder for modules inside `parent` (a folder under `mwp/modules/`, empty for the top).
+pub fn module_folder_new(p: &Project, parent: &str, name: &str) -> Lines {
+    let name = name.trim();
+    if name.is_empty() || slug(name) != name {
+        return Err("the folder name is lowercase words joined by `-`, like `billing`".into());
+    }
+    let dir = modules_dir(p, parent)?.join(name);
+    if dir.exists() {
+        return Err(format!("{} already exists", p.rel(&dir)));
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", p.rel(&dir)))?;
+    Ok(vec![format!("create {}/", p.rel(&dir))])
+}
+
+/// Creates a module from the template in `folder` (under `mwp/modules/`, empty for the top) and adds it
+/// to `map.md`. IDs stay unique across folders.
+pub fn module_new(p: &Project, folder: &str, id: &str, kind: &str, summary: &str) -> Lines {
     let (id, summary) = (id.trim(), summary.trim());
     if id.is_empty() || slug(id) != id {
         return Err("the module id is lowercase words joined by `-`, like `order` or `user-auth`".into());
@@ -141,7 +169,7 @@ pub fn module_new(p: &Project, id: &str, kind: &str, summary: &str) -> Lines {
     if summary.is_empty() {
         return Err("the module needs a one-line summary".into());
     }
-    let path = p.mwp.join("modules").join(format!("{id}.md"));
+    let path = modules_dir(p, folder)?.join(format!("{id}.md"));
     if p.by_id("module", id).is_some() || path.exists() {
         return Err(format!("module `{id}` already exists"));
     }
@@ -281,8 +309,23 @@ mod tests {
         assert!(state::locks(&open().state).is_empty());
 
         // A new module lands in map.md; deleting it takes it out again.
-        module_new(&open(), "user-auth", "domain", "Sign in").unwrap();
-        assert!(module_new(&open(), "user-auth", "domain", "x").is_err() && module_new(&open(), "Bad Id", "domain", "x").is_err());
+        module_new(&open(), "", "user-auth", "domain", "Sign in").unwrap();
+        assert!(module_new(&open(), "", "user-auth", "domain", "x").is_err() && module_new(&open(), "", "Bad Id", "domain", "x").is_err());
+
+        // Modules in subfolders: found by the core and in map.md; IDs stay unique across folders.
+        module_folder_new(&open(), "", "billing").unwrap();
+        module_folder_new(&open(), "billing", "tax").unwrap();
+        assert!(module_folder_new(&open(), "", "billing").is_err());
+        for bad in ["..", "Bad Name", "a/b"] {
+            assert!(module_folder_new(&open(), "", bad).is_err(), "{bad}");
+        }
+        assert!(module_new(&open(), "../x", "escape", "domain", "x").is_err());
+        module_new(&open(), "billing/tax", "vat", "domain", "VAT rules").unwrap();
+        assert!(root.join("mwp/modules/billing/tax/vat.md").exists() && open().by_id("module", "vat").is_some());
+        assert!(module_new(&open(), "billing", "vat", "domain", "x").is_err());
+        assert!(read(&root.join("mwp/map.md")).unwrap().contains("| vat | domain | VAT rules |"));
+        delete(&open(), &root.join("mwp/modules/billing/tax/vat.md")).unwrap();
+        fs::remove_dir_all(root.join("mwp/modules/billing")).unwrap();
         assert!(read(&root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
         assert!(!lint(&open()).errors.iter().any(|e| e.contains("map.md") || e.contains("user-auth")), "{:?}", lint(&open()).errors);
         // A SPEC needs an owner that exists; the new one passes lint.

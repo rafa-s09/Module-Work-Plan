@@ -77,11 +77,80 @@ struct View {
     claims: Vec<Claim>,
     locks: Vec<(String, Claim)>,
     tree: Vec<(&'static str, MaterialIcon, Vec<Entry>)>,
+    /// Every folder under mwp/modules/, parents before children, so empty ones show too.
+    module_dirs: Vec<PathBuf>,
 }
 
 fn load(root: &Path) -> Result<View, String> {
     let project = Project::open(root)?;
-    Ok(View { report: lint(&project), claims: state::claims(&project.state), locks: state::locks(&project.state), tree: tree(&project), project })
+    let mut module_dirs = Vec::new();
+    subdirs(&project.mwp.join("modules"), &mut module_dirs);
+    Ok(View { report: lint(&project), claims: state::claims(&project.state), locks: state::locks(&project.state), tree: tree(&project), module_dirs, project })
+}
+
+fn subdirs(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(read) = fs::read_dir(dir) else { return };
+    let mut dirs: Vec<PathBuf> = read.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    dirs.sort();
+    for d in dirs {
+        out.push(d.clone());
+        subdirs(&d, out);
+    }
+}
+
+/// A module folder as `a/b`, relative to mwp/modules/.
+fn rel_folder(modules: &Path, dir: &Path) -> String {
+    dir.strip_prefix(modules).map_or(String::new(), |r| r.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+}
+
+/// What a module folder's context menu asked for. Folders are given as `a/b` under mwp/modules/.
+enum FolderCmd {
+    NewModule(String),
+    NewFolder(String),
+    Remove(PathBuf),
+}
+
+/// The context menu of the Modules section and of each folder in it.
+fn folder_menu(ui: &mut egui::Ui, rel: &str, dir: Option<&Path>, cmd: &mut Option<FolderCmd>) {
+    if ui.button(ic(ICON_EXTENSION, "New module here…")).clicked() {
+        *cmd = Some(FolderCmd::NewModule(rel.to_string()));
+        ui.close();
+    }
+    if ui.button(ic(ICON_CREATE_NEW_FOLDER, "New folder…")).clicked() {
+        *cmd = Some(FolderCmd::NewFolder(rel.to_string()));
+        ui.close();
+    }
+    if let Some(dir) = dir {
+        let empty = fs::read_dir(dir).is_ok_and(|mut r| r.next().is_none());
+        let remove = ui.add_enabled(empty, egui::Button::new(ic(ICON_DELETE, "Delete folder"))).on_disabled_hover_text("Only an empty folder can be deleted");
+        if remove.clicked() {
+            *cmd = Some(FolderCmd::Remove(dir.to_path_buf()));
+            ui.close();
+        }
+    }
+}
+
+/// A section without folders: its files, or "Empty".
+fn flat(ui: &mut egui::Ui, entries: &[Entry], files: &mut dyn FnMut(&mut egui::Ui, &[&Entry])) {
+    files(ui, &entries.iter().collect::<Vec<_>>());
+    if entries.is_empty() {
+        ui.weak("Empty");
+    }
+}
+
+/// The modules of `dir`: its subfolders first, each collapsible with a context menu, then its files.
+fn module_folder(ui: &mut egui::Ui, dir: &Path, modules: &Path, dirs: &[PathBuf], entries: &[&Entry], files: &mut dyn FnMut(&mut egui::Ui, &[&Entry]), cmd: &mut Option<FolderCmd>) {
+    let subs: Vec<&PathBuf> = dirs.iter().filter(|d| d.parent() == Some(dir)).collect();
+    for sub in &subs {
+        let inside: Vec<&Entry> = entries.iter().filter(|e| e.path.starts_with(sub)).copied().collect();
+        let (_, header) = group(ui, ICON_FOLDER, &folder_name(sub), inside.len(), true, None, |ui| module_folder(ui, sub, modules, dirs, &inside, files, cmd));
+        header.context_menu(|ui| folder_menu(ui, &rel_folder(modules, sub), Some(sub), cmd));
+    }
+    let here: Vec<&Entry> = entries.iter().filter(|e| e.path.parent() == Some(dir)).copied().collect();
+    files(ui, &here);
+    if here.is_empty() && subs.is_empty() {
+        ui.weak("Empty");
+    }
 }
 
 fn entry(p: &Project, path: PathBuf) -> Entry {
@@ -166,7 +235,9 @@ enum Dialog {
     New { dir: String, name: String, agents: Vec<bool>, skills: bool, error: String },
     Open { dir: String, error: String },
     NewTask { title: String, size: &'static str, modules: Vec<(String, bool)>, error: String },
-    NewModule { id: String, kind: &'static str, summary: String, error: String },
+    /// `folder` is where it goes under mwp/modules/, as `a/b`; empty for the top.
+    NewModule { folder: String, id: String, kind: &'static str, summary: String, error: String },
+    NewFolder { parent: String, name: String, error: String },
     /// `owners`: the modules, then the tasks not done.
     NewSpec { title: String, owner: String, owners: Vec<String>, lifetime: &'static str, error: String },
     /// `label` names the file; `note` warns about an agent working on it.
@@ -389,6 +460,7 @@ impl App {
         let mut action = None;
         let mut close = false;
         let mut deleted: Option<PathBuf> = None;
+        let mut changed = false; // the dialog changed the project without opening a file
         let root = self.root.clone();
         let recent = self.recent.clone();
         match self.dialog.as_mut()? {
@@ -434,17 +506,18 @@ impl App {
                     });
                 });
             }
-            Dialog::NewModule { id, kind, summary, error } => {
+            Dialog::NewModule { folder, id, kind, summary, error } => {
                 egui::Modal::new(egui::Id::unique("new-module")).show(ctx, |ui| {
                     ui.set_width(480.0);
                     dialog_title(ui, ICON_EXTENSION, "New module");
-                    ui.weak("Created in mwp/modules/ from the module template and added to map.md.");
+                    let dir = if folder.is_empty() { "mwp/modules/".to_string() } else { format!("mwp/modules/{folder}/") };
+                    ui.weak(format!("Created in {dir} from the module template and added to map.md."));
                     ui.add_space(12.0);
                     let file = slug(id);
                     section(ui, "Module", |ui| {
                         ui.label("Name");
                         ui.add(egui::TextEdit::singleline(id).hint_text("order, user-auth").desired_width(f32::INFINITY));
-                        ui.weak(if file.is_empty() { "Lowercase words joined by -.".to_string() } else { format!("ID {file}  ·  mwp/modules/{file}.md") });
+                        ui.weak(if file.is_empty() { "Lowercase words joined by -.".to_string() } else { format!("ID {file}  ·  {dir}{file}.md") });
                         ui.add_space(6.0);
                         ui.label("Type");
                         ui.horizontal(|ui| {
@@ -461,12 +534,38 @@ impl App {
                     ui.separator();
                     right_row(ui, |ui| {
                         if ui.add_enabled(!file.is_empty() && !summary.trim().is_empty(), primary(ui, "Create")).clicked() {
-                            match Project::open(&root).and_then(|p| ops::module_new(&p, &file, kind, summary).map(|_| p.mwp.join("modules").join(format!("{file}.md")))) {
-                                Ok(path) => action = Some(Action::Open(path)),
+                            match Project::open(&root).and_then(|p| ops::module_new(&p, folder, &file, kind, summary)) {
+                                Ok(lines) => action = created(&root, &lines),
                                 Err(e) => *error = e,
                             }
                         }
                         close = ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
+            Dialog::NewFolder { parent, name, error } => {
+                egui::Modal::new(egui::Id::unique("new-folder")).show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    dialog_title(ui, ICON_CREATE_NEW_FOLDER, "New folder");
+                    let dir = if parent.is_empty() { "mwp/modules/".to_string() } else { format!("mwp/modules/{parent}/") };
+                    ui.weak(format!("A folder for modules, inside {dir}"));
+                    ui.add_space(12.0);
+                    let file = slug(name);
+                    section(ui, "Folder", |ui| {
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(name).hint_text("billing").desired_width(f32::INFINITY));
+                        ui.weak(if file.is_empty() { "Lowercase words joined by -.".to_string() } else { format!("{dir}{file}/") });
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        if ui.add_enabled(!file.is_empty(), primary(ui, "Create")).clicked() {
+                            match Project::open(&root).and_then(|p| ops::module_folder_new(&p, parent, &file)) {
+                                Ok(_) => (changed, close) = (true, true),
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close |= ui.add(secondary("Cancel")).clicked();
                     });
                 });
             }
@@ -668,7 +767,7 @@ impl App {
             }
             self.reload();
         }
-        if matches!(action, Some(Action::Open(_))) {
+        if changed || matches!(action, Some(Action::Open(_))) {
             self.reload();
         }
         action
@@ -859,17 +958,20 @@ fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32), n
 }
 
 /// A collapsible explorer section: icon, title and count, with an optional "+" on the right.
-/// Clicking the title toggles it too. Returns true when "+" is clicked.
-fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, open: bool, add: Option<&str>, body: impl FnOnce(&mut egui::Ui)) -> bool {
+/// Clicking the title toggles it too. Returns whether "+" was clicked, and the title (for a context menu).
+fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, open: bool, add: Option<&str>, body: impl FnOnce(&mut egui::Ui)) -> (bool, egui::Response) {
     let id = ui.make_persistent_id(("section", title));
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, open);
     let mut plus = false;
+    let mut title_r = None;
     let header = ui.horizontal(|ui| {
         state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
         let label = (icon.rich_text().color(ui.visuals().weak_text_color()), RichText::new(title).strong(), RichText::new(count.to_string()).weak());
-        if ui.add(egui::Button::new(label).frame(false)).clicked() {
+        let r = ui.add(egui::Button::new(label).frame(false));
+        if r.clicked() {
             state.toggle(ui);
         }
+        title_r = Some(r);
         if let Some(tip) = add {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0); // clear of the scroll bar
@@ -878,7 +980,7 @@ fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, open:
         }
     });
     state.show_body_indented(&header.response, ui, body);
-    plus
+    (plus, title_r.unwrap())
 }
 
 impl eframe::App for App {
@@ -918,6 +1020,7 @@ impl eframe::App for App {
         let (mut new_dialog, mut open_dialog) = (false, false);
         let (mut new_task, mut new_module, mut new_spec) = (false, false, false);
         let mut ask_delete: Option<PathBuf> = None;
+        let mut folder_cmd: Option<FolderCmd> = None;
         // The open file, when it is one the editor may delete.
         let deletable = match (&self.view, self.current()) {
             (Ok(v), Some(ed)) if ops::deletable(&v.project, &ed.path) => Some(ed.path.clone()),
@@ -1065,7 +1168,7 @@ impl eframe::App for App {
                                 ui.weak("No task in progress.");
                             }
                         });
-                        let mut files = |ui: &mut egui::Ui, entries: &[Entry]| {
+                        let mut files = |ui: &mut egui::Ui, entries: &[&Entry]| {
                                 for e in entries {
                                     let open = self.current().is_some_and(|ed| ed.path == e.path);
                                     let (icon, color) = file_icon(ui, &v.project, &e.path);
@@ -1090,17 +1193,25 @@ impl eframe::App for App {
                                         }
                                     });
                                 }
-                                if entries.is_empty() {
-                                    ui.weak("Empty");
-                                }
                         };
+                        let modules = v.project.mwp.join("modules");
                         for (label, icon, entries) in v.tree.iter().filter(|s| !s.0.ends_with("tasks")) {
                             let add = match *label {
                                 "Modules" => Some("New module"),
                                 "Specs" => Some("New SPEC"),
                                 _ => None,
                             };
-                            if group(ui, *icon, label, entries.len(), true, add, |ui| files(ui, entries)) {
+                            let (plus, header) = if *label == "Modules" {
+                                // Modules keep their folders; right-click a folder (or the section) to add to it.
+                                let refs: Vec<&Entry> = entries.iter().collect();
+                                group(ui, *icon, label, entries.len(), true, add, |ui| module_folder(ui, &modules, &modules, &v.module_dirs, &refs, &mut files, &mut folder_cmd))
+                            } else {
+                                group(ui, *icon, label, entries.len(), true, add, |ui| flat(ui, entries, &mut files))
+                            };
+                            if *label == "Modules" {
+                                header.context_menu(|ui| folder_menu(ui, "", None, &mut folder_cmd));
+                            }
+                            if plus {
                                 (new_module, new_spec) = (*label == "Modules", *label == "Specs");
                             }
                         }
@@ -1109,8 +1220,8 @@ impl eframe::App for App {
                         let ((open_icon, open), (done_icon, done)) = (tasks("Open tasks"), tasks("Done tasks"));
                         let mut plus = false;
                         group(ui, ICON_ASSIGNMENT, "Tasks", open.len() + done.len(), true, None, |ui| {
-                            plus = group(ui, open_icon, "Open", open.len(), true, Some("New task"), |ui| files(ui, open));
-                            group(ui, done_icon, "Done", done.len(), false, None, |ui| files(ui, done));
+                            plus = group(ui, open_icon, "Open", open.len(), true, Some("New task"), |ui| flat(ui, open, &mut files)).0;
+                            group(ui, done_icon, "Done", done.len(), false, None, |ui| flat(ui, done, &mut files));
                         });
                         new_task |= plus;
                     });
@@ -1248,7 +1359,21 @@ impl eframe::App for App {
             self.dialog = self.new_task_dialog();
         }
         if new_module && self.view.is_ok() {
-            self.dialog = Some(Dialog::NewModule { id: String::new(), kind: "domain", summary: String::new(), error: String::new() });
+            folder_cmd = Some(FolderCmd::NewModule(String::new()));
+        }
+        match folder_cmd {
+            Some(FolderCmd::NewModule(folder)) => {
+                self.dialog = Some(Dialog::NewModule { folder, id: String::new(), kind: "domain", summary: String::new(), error: String::new() });
+            }
+            Some(FolderCmd::NewFolder(parent)) => self.dialog = Some(Dialog::NewFolder { parent, name: String::new(), error: String::new() }),
+            Some(FolderCmd::Remove(dir)) => {
+                // remove_dir fails on a folder that is not empty: nothing in it can be lost.
+                if let Err(e) = fs::remove_dir(&dir) {
+                    self.message = Some(format!("{}: {e}", dir.display()));
+                }
+                self.reload();
+            }
+            None => {}
         }
         if new_spec {
             self.dialog = self.new_spec_dialog();
@@ -1315,13 +1440,33 @@ impl eframe::App for App {
     }
 }
 
+/// The window and taskbar icon: the largest PNG stored in assets/icone/icon.ico, the file
+/// build.rs also puts in the exe.
+fn window_icon() -> Option<egui::IconData> {
+    let ico: &[u8] = include_bytes!("../../../assets/icone/icon.ico");
+    let u32_at = |i: usize| ico.get(i..i + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+    let count = u16::from_le_bytes([*ico.get(4)?, *ico.get(5)?]) as usize;
+    // Each 16-byte directory entry ends with the image size and offset.
+    (0..count)
+        .filter_map(|i| {
+            let (size, offset) = (u32_at(6 + 16 * i + 8)?, u32_at(6 + 16 * i + 12)?);
+            ico.get(offset..offset + size).filter(|img| img.starts_with(b"\x89PNG"))
+        })
+        .max_by_key(|png| png.len())
+        .and_then(|png| eframe::icon_data::from_png_bytes(png).ok())
+}
+
 fn main() -> eframe::Result {
     // The project is the folder given, or the nearest one with mwp/ from here upward.
     let root = match std::env::args().nth(1) {
         Some(dir) => PathBuf::from(dir),
         None => Project::find().map(|p| p.root).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default()),
     };
-    let options = eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 760.0]), ..Default::default() };
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([1280.0, 760.0]);
+    if let Some(icon) = window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native("MWP", options, Box::new(|cc| Ok(Box::new(App::start(&cc.egui_ctx, root)))))
 }
 
@@ -1358,6 +1503,12 @@ mod tests {
     }
 
     #[test]
+    fn window_icon_comes_from_the_ico() {
+        let icon = window_icon().expect("icon.ico holds a PNG image");
+        assert!(icon.width == icon.height && icon.width >= 256, "{}x{}", icon.width, icon.height);
+    }
+
+    #[test]
     fn recent_projects_newest_first_at_most_five() {
         let base = std::env::temp_dir().join(format!("mwp-gui-recent-{}", std::process::id()));
         let dirs: Vec<PathBuf> = (0..7).map(|i| base.join(format!("p{i}"))).collect();
@@ -1379,7 +1530,7 @@ mod tests {
     #[test]
     fn edit_save_guard_and_new_project() {
         use egui::accesskit::Role;
-        use egui_kittest::{kittest::Queryable, Harness};
+        use egui_kittest::{kittest::{NodeT, Queryable}, Harness};
 
         let base = std::env::temp_dir().join(format!("mwp-gui-ui-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
@@ -1505,6 +1656,43 @@ mod tests {
         let spec = root.join("mwp/specs/SP-0001-session-rules.md");
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(spec.clone()));
         assert!(fs::read_to_string(&spec).unwrap().contains("owner: user-auth"));
+
+        // Right-click Modules > New folder, then right-click the folder > New module here.
+        h.get_by_label_contains("Modules").click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("New folder…").click();
+        h.run_steps(30);
+        if let Some(Dialog::NewFolder { parent, name, .. }) = h.state_mut().dialog.as_mut() {
+            assert_eq!(parent, "");
+            *name = "Billing".into();
+        } else {
+            panic!("the New folder dialog did not open");
+        }
+        h.run_steps(3);
+        h.get_by_label("Create").click();
+        h.run_steps(3);
+        assert!(root.join("mwp/modules/billing").is_dir() && h.state().dialog.is_none());
+        h.get_all_by_label_contains("billing").next().unwrap().click_secondary(); // the folder; the file header also shows the path
+        h.run_steps(3);
+        assert!(!h.get_by_label_contains("Delete folder").accesskit_node().is_disabled(), "an empty folder can be deleted");
+        h.get_by_label_contains("New module here…").click();
+        h.run_steps(30);
+        if let Some(Dialog::NewModule { folder, id, summary, .. }) = h.state_mut().dialog.as_mut() {
+            assert_eq!(folder, "billing");
+            (*id, *summary) = ("invoice".into(), "Invoices".into());
+        } else {
+            panic!("the New module dialog did not open");
+        }
+        h.run_steps(3);
+        h.get_by_label("Create").click();
+        h.run_steps(3);
+        let invoice = root.join("mwp/modules/billing/invoice.md");
+        assert!(invoice.exists() && h.state().current().is_some_and(|e| e.path == invoice));
+        h.get_all_by_label_contains("billing").next().unwrap().click_secondary(); // the folder; the file header also shows the path
+        h.run_steps(3);
+        assert!(h.get_by_label_contains("Delete folder").accesskit_node().is_disabled(), "a folder with modules cannot be deleted");
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
