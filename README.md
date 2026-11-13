@@ -96,9 +96,12 @@ The CLI is optional: everything it does can be done by hand following the templa
 `mwp-gui` is an optional desktop editor for the person following the work:
 
 - **Explorer** of the `mwp/` files by section (project, modules, open and done tasks, SPECs, ADRs), with broken files in red, and the agents at work with the modules they lock.
-- **Editor** for any of those files, with Ctrl+S to save and a prompt before unsaved changes are lost.
+- **Markdown editor** with tabs: highlighted source with line numbers, a formatting toolbar (headings, bold, italic, code, lists, checklists, quotes, links) and a live preview, side by side or alone. The front matter shows as a property table in the preview.
+- **File > Save / Save all** (Ctrl+S / Ctrl+Shift+S), the standard **Edit** commands (undo, redo, cut, copy, paste, select all), and a prompt before unsaved changes are lost.
 - **Board** of the tasks by status; a card opens the task.
 - **Problems** from `mwp lint`; a line opens the file.
+- **New task** and **New module** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`.
+- **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
 - **File > New project** creates a project (folder, name, agents, skills), like `mwp init`.
 
 It rereads the project every 2 seconds, so it follows what agents change.

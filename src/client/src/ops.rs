@@ -1,6 +1,6 @@
 //! Operations that change the project. They return the lines to show; nothing here prints.
 
-use crate::doc::{parse_list, read, set_field, slug, today, Doc, Project};
+use crate::doc::{map_texts, parse_list, read, set_field, slug, today, Doc, Project};
 use crate::lint::{has_content, lint, Report};
 use crate::scaffold::template;
 use crate::state;
@@ -117,6 +117,64 @@ pub fn task_release(p: &Project, key: &str, status: &str) -> Lines {
     Ok(vec![format!("release {id} (status: {status}, locks freed)")])
 }
 
+/// Rewrites the table in `map.md` when the modules changed. Returns what it did.
+fn refresh_map(root: &Path) -> String {
+    match Project::open(root).and_then(|p| map_texts(&p).map(|t| (p, t))) {
+        Ok((p, (cur, new))) if cur != new => match fs::write(p.mwp.join("map.md"), new) {
+            Ok(()) => "update mwp/map.md".into(),
+            Err(e) => format!("warning: cannot write mwp/map.md: {e}"),
+        },
+        Ok(_) => "mwp/map.md unchanged".into(),
+        Err(e) => format!("warning: {e}"),
+    }
+}
+
+/// Creates a module from the template and adds it to `map.md`.
+pub fn module_new(p: &Project, id: &str, kind: &str, summary: &str) -> Lines {
+    let (id, summary) = (id.trim(), summary.trim());
+    if id.is_empty() || slug(id) != id {
+        return Err("the module id is lowercase words joined by `-`, like `order` or `user-auth`".into());
+    }
+    if !["ui", "domain", "infra"].contains(&kind) {
+        return Err("the module type must be ui, domain or infra".into());
+    }
+    if summary.is_empty() {
+        return Err("the module needs a one-line summary".into());
+    }
+    let path = p.mwp.join("modules").join(format!("{id}.md"));
+    if p.by_id("module", id).is_some() || path.exists() {
+        return Err(format!("module `{id}` already exists"));
+    }
+    let mut text = template("mwp/modules/_template.md").replace("# <Module name>", &format!("# {id}"));
+    for (key, value) in [("id", id), ("type", kind), ("summary", summary), ("code", "[]"), ("tests", "[]"), ("updated", &today())] {
+        text = set_field(&text, key, value);
+    }
+    write(&path, text)?;
+    Ok(vec![format!("create {}", p.rel(&path)), refresh_map(&p.root)])
+}
+
+/// What may be deleted: modules, specs and tasks not done yet. Templates (`_*`) stay.
+pub fn deletable(p: &Project, path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    name.ends_with(".md") && !name.starts_with('_') && ["modules", "specs", "tasks/open"].iter().any(|d| path.starts_with(p.mwp.join(d)))
+}
+
+/// Deletes a module, a spec or an open task. A task's claim and locks are freed; `map.md` follows the modules.
+pub fn delete(p: &Project, path: &Path) -> Lines {
+    if !deletable(p, path) {
+        return Err(format!("{} cannot be deleted: only modules, specs and open tasks can", p.rel(path)));
+    }
+    let doc = p.docs.iter().find(|d| d.path == path);
+    fs::remove_file(path).map_err(|e| format!("{}: {e}", p.rel(path)))?;
+    let mut lines = vec![format!("delete {}", p.rel(path))];
+    match doc.map(|d| (d.kind(), d.id())) {
+        Some(("task", id)) if !id.is_empty() => state::release(&p.state, id),
+        Some(("module", _)) => lines.push(refresh_map(&p.root)),
+        _ => {}
+    }
+    Ok(lines)
+}
+
 /// Creates a proposed ADR and, with `supersedes`, marks the old one superseded.
 pub fn adr_new(p: &Project, title: &str, modules: Option<&str>, supersedes: Option<&str>) -> Lines {
     let title = title.trim();
@@ -197,6 +255,25 @@ mod tests {
         task_start(&open(), "T-0002", "codex").unwrap();
         task_release(&open(), "T-0002", "blocked").unwrap();
         assert!(state::locks(&open().state).is_empty());
+
+        // A new module lands in map.md; deleting it takes it out again.
+        module_new(&open(), "user-auth", "domain", "Sign in").unwrap();
+        assert!(module_new(&open(), "user-auth", "domain", "x").is_err() && module_new(&open(), "Bad Id", "domain", "x").is_err());
+        assert!(read(&root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
+        assert!(!lint(&open()).errors.iter().any(|e| e.contains("map.md") || e.contains("user-auth")), "{:?}", lint(&open()).errors);
+        delete(&open(), &root.join("mwp/modules/user-auth.md")).unwrap();
+        assert!(!read(&root.join("mwp/map.md")).unwrap().contains("user-auth"));
+
+        // Deleting an open task frees its claim and locks; done tasks and project files are kept.
+        task_start(&open(), "T-0002", "codex").unwrap();
+        let t2 = open().by_id("task", "T-0002").unwrap().path.clone();
+        delete(&open(), &t2).unwrap();
+        assert!(!t2.exists() && state::claims(&open().state).is_empty() && state::locks(&open().state).is_empty());
+        for kept in ["mwp/constitution.md", "mwp/modules/_template.md"] {
+            assert!(delete(&open(), &root.join(kept)).is_err(), "{kept}");
+        }
+        let done = root.join("mwp/tasks/done").join(task.file_name().unwrap());
+        assert!(delete(&open(), &done).is_err() && done.exists());
         let _ = fs::remove_dir_all(&root);
     }
 }
