@@ -6,12 +6,14 @@ mod board;
 mod dialogs;
 mod editor;
 mod explorer;
+mod search;
 mod tabs;
 
 use board::*;
 use dialogs::*;
 use editor::{Editor, Mode};
 use explorer::*;
+use search::*;
 use tabs::*;
 use eframe::egui::{self, Color32, RichText};
 use egui_material_icons::{icons::*, MaterialIcon};
@@ -37,6 +39,8 @@ const CMD: egui::Modifiers = egui::Modifiers::COMMAND;
 const SAVE: egui::KeyboardShortcut = key(CMD, egui::Key::S);
 const SAVE_ALL: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::S);
 const FIND: egui::KeyboardShortcut = key(CMD, egui::Key::F);
+const REPLACE: egui::KeyboardShortcut = key(CMD, egui::Key::H);
+const SEARCH: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::F);
 
 /// The Edit menu. Each command is replayed into the source view as the key or clipboard
 /// event the text box already handles.
@@ -58,7 +62,6 @@ const EDIT_MENU: [(&str, MaterialIcon, EditCmd, egui::KeyboardShortcut); 6] = [
     ("Paste", ICON_CONTENT_PASTE, EditCmd::Paste, key(CMD, egui::Key::V)),
     ("Select all", ICON_SELECT_ALL, EditCmd::SelectAll, key(CMD, egui::Key::A)),
 ];
-
 
 /// A button text with its icon in front.
 fn ic(icon: MaterialIcon, text: &str) -> (RichText, &str) {
@@ -82,7 +85,6 @@ enum Action {
     Quit,
 }
 
-
 /// What the panels asked for in one frame; run once they are all drawn.
 #[derive(Default)]
 struct Asks {
@@ -96,6 +98,8 @@ struct Asks {
     task_cmd: Option<TaskCmd>,
     open_error: Option<String>,
     shown_tab: Option<PathBuf>,
+    /// A project search match to select once its file is open (chars in the file).
+    reveal: Option<(PathBuf, (usize, usize))>,
 }
 
 struct App {
@@ -116,7 +120,10 @@ struct App {
     recent: Vec<PathBuf>,
     message: Option<String>,
     show_done: bool,
+    /// The bottom panel is open; `show_search` picks its Search tab over Problems.
     show_problems: bool,
+    show_search: bool,
+    search: Search,
     title: String,
 }
 
@@ -137,6 +144,8 @@ impl App {
             message: None,
             show_done: false,
             show_problems: true,
+            show_search: false,
+            search: Search::default(),
             title: String::new(),
         };
         app.remember();
@@ -173,6 +182,14 @@ impl App {
 
     fn current(&self) -> Option<&Editor> {
         self.active.and_then(|i| self.tabs.get(i))
+    }
+
+    /// Shows the Search tab of the bottom panel, seeded with the editor's selection.
+    fn open_search(&mut self) {
+        if self.view.is_ok() {
+            self.search.open(self.current().map(Editor::selected));
+            (self.show_problems, self.show_search) = (true, true);
+        }
     }
 
     fn save_tab(&mut self, i: usize) -> bool {
@@ -311,9 +328,15 @@ impl eframe::App for App {
                 self.save_tab(i);
             }
         }
-        if ctx.input_mut(|i| i.consume_shortcut(&FIND)) {
-            if let Some(i) = self.active {
-                self.tabs[i].open_find();
+        // Find in project first: Ctrl+F would also match Ctrl+Shift+F.
+        if ctx.input_mut(|i| i.consume_shortcut(&SEARCH)) {
+            self.open_search();
+        }
+        for (sc, replace) in [(FIND, false), (REPLACE, true)] {
+            if ctx.input_mut(|i| i.consume_shortcut(&sc)) {
+                if let Some(i) = self.active {
+                    self.tabs[i].open_find(replace);
+                }
             }
         }
         self.run_edit_cmd(&ctx);
@@ -383,11 +406,17 @@ impl eframe::App for App {
                         }
                     }
                     ui.separator();
-                    let find = egui::Button::new(ic(ICON_SEARCH, "Find…")).shortcut_text(ctx.format_shortcut(&FIND));
-                    if ui.add_enabled(self.active.is_some(), find).clicked() {
-                        if let Some(i) = self.active {
-                            self.tabs[i].open_find();
+                    for (label, icon, sc, replace) in [("Find…", ICON_SEARCH, FIND, false), ("Replace…", ICON_FIND_REPLACE, REPLACE, true)] {
+                        let item = egui::Button::new(ic(icon, label)).shortcut_text(ctx.format_shortcut(&sc));
+                        if ui.add_enabled(self.active.is_some(), item).clicked() {
+                            if let Some(i) = self.active {
+                                self.tabs[i].open_find(replace);
+                            }
                         }
+                    }
+                    let search = egui::Button::new(ic(ICON_MANAGE_SEARCH, "Find in project…")).shortcut_text(ctx.format_shortcut(&SEARCH));
+                    if ui.add_enabled(self.view.is_ok(), search).clicked() {
+                        self.open_search();
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -400,7 +429,7 @@ impl eframe::App for App {
                     }
                     ui.separator();
                     ui.checkbox(&mut self.show_done, "Done tasks on the board");
-                    ui.checkbox(&mut self.show_problems, "Problems panel");
+                    ui.checkbox(&mut self.show_problems, "Bottom panel (Problems, Search)");
                 });
             });
         });
@@ -412,7 +441,10 @@ impl eframe::App for App {
                     let tint = |n: usize, c: Color32| if n > 0 { c } else { ui.visuals().weak_text_color() };
                     let (ec, wc) = (tint(e, ui.visuals().error_fg_color), tint(w, ui.visuals().warn_fg_color));
                     let problems = (ICON_ERROR.rich_text().color(ec), RichText::new(e.to_string()).color(ec), ICON_WARNING.rich_text().color(wc), RichText::new(w.to_string()).color(wc));
-                    ui.toggle_value(&mut self.show_problems, problems).on_hover_text("Errors and warnings from mwp lint");
+                    let on = self.show_problems && !self.show_search;
+                    if ui.selectable_label(on, problems).on_hover_text("Errors and warnings from mwp lint").clicked() {
+                        (self.show_problems, self.show_search) = (!on, false);
+                    }
                     ui.separator();
                     ui.label(ICON_SMART_TOY.rich_text());
                     ui.label(format!("{} in progress", v.claims.len()));
@@ -463,9 +495,16 @@ impl eframe::App for App {
                 if self.show_problems {
                     egui::Panel::bottom("problems").resizable(true).default_size(110.0).show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.strong("Problems");
-                            ui.weak(format!("{} errors, {} warnings", v.report.errors.len(), v.report.warnings.len()));
+                            ui.selectable_value(&mut self.show_search, false, RichText::new("Problems").strong());
+                            ui.selectable_value(&mut self.show_search, true, RichText::new("Search").strong());
+                            if !self.show_search {
+                                ui.weak(format!("{} errors, {} warnings", v.report.errors.len(), v.report.warnings.len()));
+                            }
                         });
+                        if self.show_search {
+                            search_panel(ui, v, &self.tabs, self.loaded, &mut self.search, &mut ask);
+                            return;
+                        }
                         egui::ScrollArea::vertical().id_salt("problems").auto_shrink([false, false]).show(ui, |ui| {
                             let errors = v.report.errors.iter().map(|l| (l, ui.visuals().error_fg_color, ICON_ERROR));
                             let warnings = v.report.warnings.iter().map(|l| (l, ui.visuals().warn_fg_color, ICON_WARNING));
@@ -660,6 +699,12 @@ impl eframe::App for App {
         }
         if let Some(a) = ask.action {
             self.request(&ctx, a);
+        }
+        // Opening a file is never held back, so its tab is there now.
+        if let Some((path, at)) = ask.reveal {
+            if let Some(ed) = self.tabs.iter_mut().find(|e| e.path == path) {
+                ed.show_match(&self.search.query, self.search.case, at);
+            }
         }
     }
 }
@@ -1085,6 +1130,43 @@ mod tests {
         let (a, b) = (r.primary.index.0, r.secondary.index.0);
         assert_eq!((a.min(b), a.max(b)), (23, 28));
         assert!(h.ctx.memory(|m| m.has_focus(h.state().tabs[i].id())));
+
+        // Replace: Ctrl+H shows the Replace row; Replace all, then one Ctrl+Z in the source undoes it.
+        let before = h.state().tabs[i].text.clone();
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::H]);
+        h.run_steps(3);
+        assert!(h.state().tabs[i].find.as_ref().is_some_and(|f| f.query == "alpha" && f.replace.is_some()), "seeded from the selection");
+        h.get_all_by_role(Role::TextInput).nth(1).unwrap().focus();
+        h.run_steps(2);
+        h.get_all_by_role(Role::TextInput).nth(1).unwrap().type_text("omega");
+        h.run_steps(3);
+        h.get_by_label("Replace all").click();
+        h.run_steps(3);
+        assert_eq!(h.state().tabs[i].text, "omega beta omega\ngamma omega\n");
+        let source = h.state().tabs[i].id();
+        h.ctx.memory_mut(|m| m.request_focus(source));
+        h.run_steps(2);
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::Z]);
+        h.run_steps(3);
+        assert_eq!(h.state().tabs[i].text, before);
+        h.state_mut().tabs[i].find = None;
+
+        // Find in project: Ctrl+Shift+F, type, click a match: its file opens with the match selected.
+        let ctx = h.ctx.clone();
+        h.state_mut().apply(&ctx, Action::Board);
+        h.key_combination_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, &[egui::Key::F]);
+        h.run_steps(3);
+        assert!(h.state().show_search);
+        h.get_by_role(Role::TextInput).focus();
+        h.run_steps(2);
+        h.get_by_role(Role::TextInput).type_text("gamma");
+        h.run_steps(3);
+        h.get_by_label("1 result in 1 file");
+        h.get_by_label("gamma alpha").click();
+        h.run_steps(3);
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(notes.clone()));
+        assert_eq!(h.state().current().and_then(|e| e.find.as_ref()).and_then(|f| f.current), Some((17, 22)));
+        h.state_mut().show_search = false;
 
         // Right-click a tab > Move left: the order changes, the open tab stays open.
         let before: Vec<PathBuf> = h.state().tabs.iter().map(|t| t.path.clone()).collect();

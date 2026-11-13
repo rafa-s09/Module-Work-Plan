@@ -44,6 +44,8 @@ pub struct Find {
     /// The current match, as a char range. Kept here, not as the text box's selection: egui drops
     /// the selection of a text box without focus, and the focus stays in the query field.
     pub current: Option<(usize, usize)>,
+    /// The replacement text, while the Replace row is shown.
+    pub replace: Option<String>,
 }
 
 /// Every match of `query` in `text`, as char ranges (the text box counts in chars).
@@ -80,15 +82,65 @@ impl Editor {
     }
 
     /// Opens the find bar (or focuses it), with the selection as the query when it is on one line.
-    pub fn open_find(&mut self) {
+    /// `replace` also shows the Replace row.
+    pub fn open_find(&mut self, replace: bool) {
         let (a, b) = sel(self);
-        let picked: String = self.text.chars().skip(a).take(b - a).collect();
-        let f = self.find.get_or_insert_with(|| Find { query: String::new(), case: false, focus: true, reveal: false, current: None });
+        let picked = self.selected();
+        let f = self.find.get_or_insert_with(|| Find { query: String::new(), case: false, focus: true, reveal: false, current: None, replace: None });
         if !picked.is_empty() && !picked.contains('\n') {
             f.query = picked;
             f.current = Some((a, b));
         }
+        if replace && f.replace.is_none() {
+            f.replace = Some(String::new());
+        }
         f.focus = true;
+    }
+
+    /// The text selected in the source (empty when nothing is).
+    pub fn selected(&self) -> String {
+        let (a, b) = sel(self);
+        self.text.chars().skip(a).take(b - a).collect()
+    }
+
+    /// Opens the find bar on a match found elsewhere (the project search), scrolled to it.
+    pub fn show_match(&mut self, query: &str, case: bool, at: (usize, usize)) {
+        let replace = self.find.take().and_then(|f| f.replace);
+        self.find = Some(Find { query: query.to_string(), case, focus: false, reveal: true, current: Some(at), replace });
+    }
+
+    /// Replaces the current match and goes to the next one. When the current match is not a match
+    /// (none yet, or the text changed), it only goes to the next one, so the user sees what is replaced.
+    fn replace_current(&mut self) {
+        let Some(f) = self.find.as_ref() else { return };
+        let (Some(with), Some((a, b))) = (f.replace.clone(), f.current.filter(|c| matches(&self.text, &f.query, f.case).contains(c))) else {
+            let next = self.find_step(true, false);
+            if let Some(f) = self.find.as_mut() {
+                (f.current, f.reveal) = (next, next.is_some());
+            }
+            return;
+        };
+        let (ba, bb) = (byte(&self.text, a), byte(&self.text, b));
+        self.text.replace_range(ba..bb, &with);
+        let end = a + with.chars().count();
+        self.find.as_mut().unwrap().current = Some((a, end));
+        let next = self.find_step(true, false);
+        let f = self.find.as_mut().unwrap();
+        (f.current, f.reveal) = (next, next.is_some());
+    }
+
+    /// Replaces every match at once; returns how many. One Ctrl+Z in the source undoes it.
+    fn replace_all(&mut self) -> usize {
+        let Some(f) = self.find.as_ref() else { return 0 };
+        let Some(with) = f.replace.clone() else { return 0 };
+        let m = matches(&self.text, &f.query, f.case);
+        let bytes: Vec<usize> = self.text.char_indices().map(|(i, _)| i).chain([self.text.len()]).collect();
+        // From the end, so the offsets still to replace stay valid.
+        for &(a, b) in m.iter().rev() {
+            self.text.replace_range(bytes[a]..bytes[b], &with);
+        }
+        self.find.as_mut().unwrap().current = None;
+        m.len()
     }
 
     /// The next (or previous) match after the current one (or the cursor), wrapping around.
@@ -366,15 +418,22 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resol
 
 /// The find bar: query, match case, "n of m", previous / next, close. Enter and F3 go to the next
 /// match, Shift with them to the previous one, Esc closes. The query keeps the focus; the match is
-/// selected in the source and scrolled into view.
+/// selected in the source and scrolled into view. The chevron (or Ctrl+H) shows the Replace row,
+/// where Enter replaces the current match.
 fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
     let Some(f) = ed.find.as_ref() else { return };
     let m = matches(&ed.text, &f.query, f.case);
     let here = f.current.and_then(|c| m.iter().position(|r| *r == c));
     let (mut step, mut close, mut typed) = (None, false, false);
+    let (mut replace_one, mut replace_all) = (false, false);
     let field_id = egui::Id::unique(("find", &ed.path));
     let f = ed.find.as_mut().unwrap();
+    let arrow = |icon: MaterialIcon| egui::Button::new(icon.rich_text()).frame(false);
     ui.horizontal(|ui| {
+        let chevron = if f.replace.is_some() { ICON_EXPAND_MORE } else { ICON_CHEVRON_RIGHT };
+        if ui.add(arrow(chevron)).on_hover_text("Replace (Ctrl+H)").clicked() {
+            f.replace = if f.replace.is_some() { None } else { Some(String::new()) };
+        }
         ui.label(ICON_SEARCH.rich_text().size(18.0).color(ui.visuals().weak_text_color()));
         let r = ui.add(egui::TextEdit::singleline(&mut f.query).id(field_id).hint_text("Find").desired_width(260.0));
         if std::mem::take(&mut f.focus) {
@@ -397,7 +456,6 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
             (n, None) => format!("{n} found"),
         };
         ui.label(egui::RichText::new(count).color(if m.is_empty() && !f.query.is_empty() { ui.visuals().error_fg_color } else { ui.visuals().weak_text_color() }));
-        let arrow = |icon: MaterialIcon| egui::Button::new(icon.rich_text()).frame(false);
         if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_UPWARD)).on_hover_text("Previous match (Shift+Enter, Shift+F3)").clicked() {
             step = Some(false);
         }
@@ -406,6 +464,33 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
         }
         close |= ui.add(arrow(ICON_CLOSE)).on_hover_text("Close (Esc)").clicked();
     });
+    if let Some(with) = f.replace.as_mut() {
+        ui.horizontal(|ui| {
+            // Lined up under the query field: the chevron's width, then the search icon's.
+            ui.add_space(ui.spacing().interact_size.y + ui.spacing().item_spacing.x);
+            ui.label(ICON_FIND_REPLACE.rich_text().size(18.0).color(ui.visuals().weak_text_color()));
+            let r = ui.add(egui::TextEdit::singleline(with).hint_text("Replace").desired_width(260.0));
+            let (enter, esc) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+            if r.lost_focus() && enter {
+                replace_one = true;
+                r.request_focus();
+            }
+            if (r.has_focus() || r.lost_focus()) && esc {
+                close = true;
+            }
+            let any = !m.is_empty();
+            replace_one |= ui.add_enabled(any, egui::Button::new("Replace")).on_hover_text("Replace this match and go to the next (Enter)").clicked();
+            replace_all = ui.add_enabled(any, egui::Button::new("Replace all")).clicked();
+        });
+    }
+    if replace_all {
+        ed.replace_all();
+        return;
+    }
+    if replace_one {
+        ed.replace_current();
+        return;
+    }
     if let Some(back) = ui.input(|i| i.key_pressed(egui::Key::F3).then_some(i.modifiers.shift)) {
         step = Some(!back);
     }
@@ -627,7 +712,7 @@ mod tests {
         assert!(matches(text, "", false).is_empty() && matches(text, "zzz", false).is_empty());
 
         let mut ed = editor(text, 0, 0);
-        ed.open_find();
+        ed.open_find(false);
         ed.find.as_mut().unwrap().query = "alpha".into();
         assert_eq!(ed.find_step(true, false), Some((4, 9)));
         ed.find.as_mut().unwrap().current = Some((4, 9));
@@ -637,9 +722,26 @@ mod tests {
 
         // The selection on one line seeds the query and the current match.
         let mut ed = editor(text, 4, 9);
-        ed.open_find();
+        ed.open_find(false);
         let f = ed.find.as_ref().unwrap();
-        assert_eq!((f.query.as_str(), f.current), ("alpha", Some((4, 9))));
+        assert_eq!((f.query.as_str(), f.current, f.replace.is_none()), ("alpha", Some((4, 9)), true));
+    }
+
+    #[test]
+    fn replace_one_then_all() {
+        let mut ed = editor("é cat, Cat; cat", 0, 0);
+        ed.open_find(true);
+        let f = ed.find.as_mut().unwrap();
+        (f.query, f.replace) = ("cat".into(), Some("lion cat".into()));
+        // Nothing current yet: the first press only goes to the first match.
+        ed.replace_current();
+        assert_eq!((ed.text.as_str(), ed.find.as_ref().unwrap().current), ("é cat, Cat; cat", Some((2, 5))));
+        // Replaced, and the next match is after the new text (which itself contains "cat").
+        ed.replace_current();
+        assert_eq!((ed.text.as_str(), ed.find.as_ref().unwrap().current), ("é lion cat, Cat; cat", Some((12, 15))));
+        ed.find.as_mut().unwrap().case = true;
+        assert_eq!(ed.replace_all(), 2, "Match case leaves Cat");
+        assert_eq!(ed.text, "é lion lion cat, Cat; lion cat");
     }
 
     #[test]
