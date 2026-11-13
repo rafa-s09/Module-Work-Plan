@@ -14,9 +14,10 @@ const USAGE: &str = "mwp — Module Work Plan
 Usage: mwp <command> [options]
 
 Project
-  init [dir] [--agent a,b] [--name <name>] [--no-skill]
+  init [dir] [--agent a,b] [--name <name>] [--no-skill] [--update-skills]
                                             Create mwp/ and the files of each agent; asks which agents
-                                            (claude, codex, cursor, gemini, copilot; default claude). Never overwrites
+                                            (claude, codex, cursor, gemini, copilot; default claude). Never overwrites.
+                                            --update-skills only rewrites the skills with this version's
   lint [--strict]                           Check the project; --strict also fails on warnings
   map [--write | --check]                   Print the module map; --write updates map.md, --check fails if stale
   remap [--dry-run]                         Recheck modules (paths, dependencies, tests) and update map.md
@@ -86,7 +87,7 @@ fn main() -> ExitCode {
     }
     let rest = &raw[1..];
     let result = match raw[0].as_str() {
-        "init" => Args::parse(rest, &["--name", "--agent", "--no-skill"]).and_then(|a| init(&a)),
+        "init" => Args::parse(rest, &["--name", "--agent", "--no-skill", "--update-skills"]).and_then(|a| init(&a)),
         "lint" => Args::parse(rest, &["--strict"]).and_then(|a| lint_cmd(&a)),
         "map" => Args::parse(rest, &["--write", "--check"]).and_then(|a| map(&a)),
         "remap" => Args::parse(rest, &["--dry-run"]).and_then(|a| remap(&a)),
@@ -131,6 +132,14 @@ fn ask(question: &str) -> String {
 
 fn init(a: &Args) -> Res {
     let dir = Path::new(a.pos.first().map_or(".", String::as_str));
+    if a.has("--update-skills") {
+        // Without --agent: the agents already set up here, or the default.
+        let agents = match a.get("--agent") {
+            None if !scaffold::installed(dir).is_empty() => scaffold::installed(dir),
+            v => parse_agents(v.unwrap_or(""))?,
+        };
+        return show(scaffold::update_skills(dir, &agents));
+    }
     // Questions only for a person at a terminal; an agent or a script gets the defaults.
     let interactive = io::stdin().is_terminal();
     let agents = match a.get("--agent") {

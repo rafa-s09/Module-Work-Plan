@@ -52,6 +52,11 @@ pub fn lint(p: &Project) -> Report {
     let mut r = Report::default();
     let mut seen: BTreeMap<&str, &Doc> = BTreeMap::new();
 
+    // Without this, a broken task or module would vanish from every command.
+    for path in &p.invalid {
+        r.errors.push(format!("{}: no front matter; the file must start with `---` and close it with `---`", p.rel(path)));
+    }
+
     for d in &p.docs {
         let Some((kind, prefix, required)) = KINDS.iter().find(|k| k.0 == d.kind()) else {
             r.err(p, d, format!("unknown kind `{}`", d.kind()));

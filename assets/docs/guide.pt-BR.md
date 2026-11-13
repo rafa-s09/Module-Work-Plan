@@ -288,6 +288,7 @@ Cria a estrutura em `dir` (padrão: pasta atual). Nunca sobrescreve. Em um termi
 | `--agent a,b` | Agentes a configurar, ou `all`. Sem escolha, usa `claude` |
 | `--name <name>` | Preenche o nome do projeto no `PROJECT.md` |
 | `--no-skill` | Não instala as skills |
+| `--update-skills` | Só regrava as skills com as desta versão, para os agentes já configurados (ou `--agent`). Rode depois de atualizar o CLI |
 
 | Agente | Arquivo de instruções | Pasta de skills |
 |---|---|---|
@@ -389,6 +390,7 @@ Verifica o projeto inteiro. Confere apenas o que não exige julgamento humano:
 | Verificação | Nível |
 |---|---|
 | `kind` conhecido, campos obrigatórios, valores válidos de `status` / `size` / `lifetime` | erro |
+| Arquivo em `modules/`, `tasks/`, `specs/` ou `decisions/` sem front matter | erro |
 | Formato de ID (`T-`, `SP-`, `ADR-` mais pelo menos 4 dígitos) e IDs duplicados | erro |
 | Referências a módulos, tasks, SPECs e ADRs que não existem | erro |
 | `refs:` citando uma task que não está concluída | erro |

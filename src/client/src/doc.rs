@@ -48,9 +48,9 @@ impl Doc {
     }
 }
 
-/// Reads a text file with `\n` line endings; `None` if missing or not UTF-8.
+/// Reads a text file with `\n` line endings and no BOM; `None` if missing or not UTF-8.
 pub fn read(path: &Path) -> Option<String> {
-    fs::read_to_string(path).ok().map(|s| s.replace("\r\n", "\n"))
+    fs::read_to_string(path).ok().map(|s| s.trim_start_matches('\u{feff}').replace("\r\n", "\n"))
 }
 
 pub fn split_front_matter(text: &str) -> Option<(&str, &str)> {
@@ -115,6 +115,8 @@ pub struct Project {
     /// Where the ledger, claims and locks live (see `state::dir`).
     pub state: PathBuf,
     pub docs: Vec<Doc>,
+    /// Files that must be MWP docs but have no readable front matter.
+    pub invalid: Vec<PathBuf>,
 }
 
 impl Project {
@@ -138,13 +140,16 @@ impl Project {
         // content/ holds the project's resources, not MWP docs; its .md files may carry unrelated front matter.
         let content = mwp.join("content");
         files.retain(|p| !p.starts_with(&content));
-        let docs = files.iter()
-            .filter(|p| p.extension().is_some_and(|e| e == "md"))
-            .filter(|p| !p.file_name().unwrap().to_string_lossy().starts_with('_'))
-            .filter_map(|p| Doc::load(p))
+        files.retain(|p| p.extension().is_some_and(|e| e == "md") && !p.file_name().unwrap().to_string_lossy().starts_with('_'));
+        let docs: Vec<Doc> = files.iter().filter_map(|p| Doc::load(p)).collect();
+        // Everything in these folders is a doc, except the README that explains the folder.
+        let invalid = files.iter()
+            .filter(|p| ["modules", "tasks", "specs", "decisions"].iter().any(|d| p.starts_with(mwp.join(d))))
+            .filter(|p| p.file_name().unwrap() != "README.md" && !docs.iter().any(|d| &d.path == *p))
+            .cloned()
             .collect();
         let state = crate::state::dir(&root);
-        Ok(Project { root, mwp, state, docs })
+        Ok(Project { root, mwp, state, docs, invalid })
     }
     pub fn of_kind<'a>(&'a self, kind: &'a str) -> impl Iterator<Item = &'a Doc> + 'a {
         self.docs.iter().filter(move |d| d.kind() == kind)

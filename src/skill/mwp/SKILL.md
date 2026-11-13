@@ -120,7 +120,8 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 | Command | What it does | Without the CLI |
 |---|---|---|
 | `mwp init [dir] [--agent a,b] [--name <n>] [--no-skill]` | Creates `mwp/`, `AGENTS.md` and, for each agent (`claude`, `codex`, `cursor`, `gemini`, `copilot`; default `claude`), its instruction file and this skill; never overwrites | Copy the templates |
-| `mwp lint [--strict]` | Checks front matter, IDs, references, closures, registered tests, map, size limits. Exit 1 on errors (`--strict`: also on warnings) | Check by reading the files |
+| `mwp init --update-skills [--agent a,b]` | Rewrites only the skills with the installed CLI's version | Copy the `SKILL.md` files |
+| `mwp lint [--strict]` | Checks front matter (a file without it is an error), IDs, references, closures, registered tests, map, size limits. Exit 1 on errors (`--strict`: also on warnings) | Check by reading the files |
 | `mwp map [--write \| --check]` | Prints the module table; `--write` updates `map.md`; `--check` fails if it is stale | Rebuild the table between the markers from module front matter |
 | `mwp remap [--dry-run]` | Rechecks modules (paths, `depends_on`, registered tests) and updates `map.md` | Same checks by hand, then rebuild the table |
 | `mwp task new <title> [--size S\|M\|L] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]` | Creates an open task from the template with the next T- ID reserved | `mwp next T --reserve` and copy the task template |

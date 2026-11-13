@@ -286,6 +286,7 @@ Creates the structure in `dir` (default: current folder). Never overwrites. At a
 | `--agent a,b` | Agents to set up, or `all`. No choice means `claude` |
 | `--name <name>` | Fills the project name in `PROJECT.md` |
 | `--no-skill` | Does not install the skills |
+| `--update-skills` | Only rewrites the skills with this version's, for the agents already set up (or `--agent`). Run it after updating the CLI |
 
 | Agent | Instruction file | Skills folder |
 |---|---|---|
@@ -387,6 +388,7 @@ Checks the whole project. It verifies only what needs no human judgment:
 | Check | Level |
 |---|---|
 | Known `kind`, required fields, valid `status` / `size` / `lifetime` values | error |
+| A file in `modules/`, `tasks/`, `specs/` or `decisions/` without front matter | error |
 | ID format (`T-`, `SP-`, `ADR-` plus at least 4 digits) and duplicate IDs | error |
 | References to modules, tasks, SPECs and ADRs that do not exist | error |
 | `refs:` citing a task that is not done | error |

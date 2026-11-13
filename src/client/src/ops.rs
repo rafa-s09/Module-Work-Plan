@@ -173,6 +173,20 @@ mod tests {
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("status"), "open");
 
         assert!(task_close(&open(), "T-0001").is_err()); // empty closure
+
+        // A task without front matter is reported, not silently dropped.
+        let broken = root.join("mwp/tasks/open/T-0009-broken.md");
+        fs::write(&broken, "# T-0009\n").unwrap();
+        assert!(lint(&open()).errors.iter().any(|e| e.contains("T-0009-broken.md")));
+        fs::remove_file(&broken).unwrap();
+
+        // An edited skill is restored; only installed agents are touched.
+        let skill = root.join(".agents/skills/mwp/SKILL.md");
+        fs::write(&skill, "old").unwrap();
+        let agents = crate::scaffold::installed(&root);
+        assert_eq!(agents.iter().map(|a| a.id).collect::<Vec<_>>(), ["claude", "codex"]);
+        assert_eq!(crate::scaffold::update_skills(&root, &agents).unwrap().iter().filter(|l| l.starts_with("update")).count(), 1);
+        assert!(read(&skill).unwrap().starts_with("---"));
         let task = open().by_id("task", "T-0001").unwrap().path.clone();
         fs::write(&task, read(&task).unwrap() + "Checked by hand.\n").unwrap();
         let (_, report) = task_close(&open(), "T-0001").unwrap();

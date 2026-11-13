@@ -72,6 +72,29 @@ pub fn parse_agents(raw: &str) -> Result<Vec<&'static Agent>, String> {
     Ok(out)
 }
 
+/// Agents already set up in `dir`: the ones whose skills folder has the `mwp` skill.
+pub fn installed(dir: &Path) -> Vec<&'static Agent> {
+    AGENTS.iter().filter(|a| dir.join(a.skills).join(SKILLS[0].0).exists()).collect()
+}
+
+/// Rewrites the skills of `agents` with the version in this binary. Touches nothing else.
+pub fn update_skills(dir: &Path, agents: &[&Agent]) -> Result<Vec<String>, String> {
+    let mut lines = Vec::new();
+    for a in agents {
+        for (name, content) in SKILLS {
+            let path = format!("{}/{name}", a.skills);
+            let target = dir.join(&path);
+            if fs::read_to_string(&target).is_ok_and(|cur| cur.replace("\r\n", "\n") == content.replace("\r\n", "\n")) {
+                lines.push(format!("same   {path}"));
+                continue;
+            }
+            fs::create_dir_all(target.parent().unwrap()).and_then(|_| fs::write(&target, content)).map_err(|e| format!("{path}: {e}"))?;
+            lines.push(format!("update {path}"));
+        }
+    }
+    Ok(lines)
+}
+
 pub fn template(path: &str) -> &'static str {
     DOCS.iter().find(|t| t.0 == path).unwrap().1
 }
