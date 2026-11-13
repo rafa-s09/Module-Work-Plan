@@ -83,8 +83,17 @@ pub fn tab_strip(ui: &mut egui::Ui, v: &View, tabs: &[Editor], active: Option<us
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button(ic(ICON_CLOSE, "Close")).clicked() {
+                        let close = egui::Button::new(ic(ICON_CLOSE, "Close")).shortcut_text(ui.ctx().format_shortcut(&CLOSE_TAB));
+                        if ui.add(close).clicked() {
                             ask.action = Some(Action::CloseTab(i));
+                            ui.close();
+                        }
+                        if ui.add_enabled(last > 0, egui::Button::new(ic(ICON_TAB_CLOSE, "Close others"))).clicked() {
+                            ask.action = Some(Action::CloseTabs((0..=last).filter(|&j| j != i).collect()));
+                            ui.close();
+                        }
+                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_TAB_CLOSE_RIGHT, "Close to the right"))).clicked() {
+                            ask.action = Some(Action::CloseTabs((i + 1..=last).collect()));
                             ui.close();
                         }
                     });

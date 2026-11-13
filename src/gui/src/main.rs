@@ -41,6 +41,14 @@ const SAVE_ALL: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), e
 const FIND: egui::KeyboardShortcut = key(CMD, egui::Key::F);
 const REPLACE: egui::KeyboardShortcut = key(CMD, egui::Key::H);
 const SEARCH: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::F);
+const CLOSE_TAB: egui::KeyboardShortcut = key(CMD, egui::Key::W);
+/// Next / previous tab. The Shift ones come first: Ctrl+Tab would also match Ctrl+Shift+Tab.
+const TAB_STEPS: [(egui::KeyboardShortcut, bool); 4] = [
+    (key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::Tab), false),
+    (key(CMD, egui::Key::Tab), true),
+    (key(CMD, egui::Key::PageUp), false),
+    (key(CMD, egui::Key::PageDown), true),
+];
 
 /// The Edit menu. Each command is replayed into the source view as the key or clipboard
 /// event the text box already handles.
@@ -78,6 +86,8 @@ enum Action {
     Open(PathBuf),
     Board,
     CloseTab(usize),
+    /// Close several tabs (Close others, Close to the right); unsaved ones are asked about once.
+    CloseTabs(Vec<usize>),
     /// Move the tab at the first index to the second; the open tab stays open.
     MoveTab(usize, usize),
     /// Switch to the project in this folder; `true` also opens its PROJECT.md.
@@ -215,6 +225,7 @@ impl App {
     fn request(&mut self, ctx: &egui::Context, a: Action) {
         let blocked = match &a {
             Action::CloseTab(i) => self.tabs.get(*i).is_some_and(Editor::dirty),
+            Action::CloseTabs(list) => list.iter().any(|&i| self.tabs.get(i).is_some_and(Editor::dirty)),
             Action::Project(..) | Action::Quit => self.tabs.iter().any(Editor::dirty),
             Action::Open(_) | Action::Board | Action::MoveTab(..) => false,
         };
@@ -238,15 +249,22 @@ impl App {
                 },
             },
             Action::Board => self.active = None,
-            Action::CloseTab(i) if i < self.tabs.len() => {
-                self.tabs.remove(i);
-                self.active = match self.active {
-                    Some(a) if a > i => Some(a - 1),
-                    Some(a) if a == i => (!self.tabs.is_empty()).then(|| i.min(self.tabs.len() - 1)),
-                    other => other,
+            Action::CloseTab(i) => self.apply(ctx, Action::CloseTabs(vec![i])),
+            Action::CloseTabs(mut list) => {
+                let open = self.current().map(|e| e.path.clone());
+                let was = self.active;
+                list.retain(|&i| i < self.tabs.len());
+                list.sort_unstable();
+                list.dedup();
+                for &i in list.iter().rev() {
+                    self.tabs.remove(i);
+                }
+                // The open tab stays open; when it was closed, the one now in its place opens.
+                self.active = match open.and_then(|p| self.tabs.iter().position(|e| e.path == p)) {
+                    Some(i) => Some(i),
+                    None => was.filter(|_| !self.tabs.is_empty()).map(|a| a.min(self.tabs.len() - 1)),
                 };
             }
-            Action::CloseTab(_) => {}
             Action::MoveTab(from, to) if from < self.tabs.len() && to < self.tabs.len() => {
                 let open = self.current().map(|e| e.path.clone());
                 let tab = self.tabs.remove(from);
@@ -328,6 +346,23 @@ impl eframe::App for App {
                 self.save_tab(i);
             }
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&CLOSE_TAB)) {
+            if let Some(i) = self.active {
+                self.request(&ctx, Action::CloseTab(i));
+            }
+        }
+        for (sc, forward) in TAB_STEPS {
+            if ctx.input_mut(|i| i.consume_shortcut(&sc)) && !self.tabs.is_empty() {
+                // From the board, the first (or last) tab.
+                let n = self.tabs.len();
+                self.active = Some(match self.active {
+                    Some(i) if forward => (i + 1) % n,
+                    Some(i) => (i + n - 1) % n,
+                    None if forward => 0,
+                    None => n - 1,
+                });
+            }
+        }
         // Find in project first: Ctrl+F would also match Ctrl+Shift+F.
         if ctx.input_mut(|i| i.consume_shortcut(&SEARCH)) {
             self.open_search();
@@ -382,7 +417,7 @@ impl eframe::App for App {
                     save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, "Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
                     let any = self.tabs.iter().any(Editor::dirty);
                     save_all = ui.add_enabled(any, egui::Button::new(ic(ICON_SAVE_AS, "Save all")).shortcut_text(ctx.format_shortcut(&SAVE_ALL))).clicked();
-                    if ui.add_enabled(self.active.is_some(), egui::Button::new(ic(ICON_CLOSE, "Close file"))).clicked() {
+                    if ui.add_enabled(self.active.is_some(), egui::Button::new(ic(ICON_CLOSE, "Close file")).shortcut_text(ctx.format_shortcut(&CLOSE_TAB))).clicked() {
                         ask.action = self.active.map(Action::CloseTab);
                     }
                     if ui.add_enabled(deletable.is_some(), egui::Button::new(ic(ICON_DELETE, "Delete file…"))).on_disabled_hover_text("Only modules, specs and open tasks can be deleted").clicked() {
@@ -560,8 +595,13 @@ impl eframe::App for App {
                             });
                         });
                         ui.separator();
-                        if let Some(how) = editor::show(ui, ed, &mut self.mode) {
+                        let find_id = |id: &str| v.project.docs.iter().find(|d| !d.id().is_empty() && d.id() == id).map(|d| d.path.clone());
+                        let (how, open) = editor::show(ui, ed, &mut self.mode, &find_id);
+                        if let Some(how) = how {
                             resolve = self.active.map(|i| (i, how));
+                        }
+                        if let Some(path) = open {
+                            ask.action = Some(Action::Open(path));
                         }
                     }
                     None => {
@@ -651,6 +691,7 @@ impl eframe::App for App {
         if let Some(pending) = &self.pending {
             let targets: Vec<usize> = match pending {
                 Action::CloseTab(i) => vec![*i],
+                Action::CloseTabs(list) => list.iter().copied().filter(|&i| self.tabs.get(i).is_some_and(Editor::dirty)).collect(),
                 _ => (0..self.tabs.len()).filter(|&i| self.tabs[i].dirty()).collect(),
             };
             let names: Vec<String> = targets.iter().map(|&i| self.tabs[i].name()).collect();
@@ -1177,6 +1218,47 @@ mod tests {
         let after: Vec<PathBuf> = h.state().tabs.iter().map(|t| t.path.clone()).collect();
         assert_eq!((after[i - 1].clone(), after[i].clone()), (before[i].clone(), before[i - 1].clone()));
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(notes.clone()));
+
+        // An ID in the preview links to its file; one that does not exist stays text.
+        let t1 = root.join("mwp/tasks/open/T-0001-a.md");
+        assert!(t1.exists());
+        fs::write(&notes, "See T-0001 and T-0404.\n").unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        assert!(h.query_by_label("T-0404").is_none());
+        h.get_by_label("T-0001").click();
+        h.run_steps(3);
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(t1.clone()));
+
+        // Ctrl+Tab / Ctrl+Shift+Tab step through the tabs, wrapping; Ctrl+W closes the open one.
+        let (n, at) = (h.state().tabs.len(), h.state().active.unwrap());
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::Tab]);
+        h.run_steps(3);
+        assert_eq!(h.state().active, Some((at + 1) % n));
+        h.key_combination_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, &[egui::Key::Tab]);
+        h.run_steps(3);
+        assert_eq!(h.state().active, Some(at));
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::W]);
+        h.run_steps(3);
+        assert!(h.state().tabs.len() == n - 1 && !h.state().tabs.iter().any(|t| t.path == t1));
+
+        // Close others: the unsaved tabs among them are asked about once; the open tab stays.
+        let n = h.state().tabs.len();
+        assert!(n >= 3);
+        h.state_mut().tabs[0].text.push_str("unsaved");
+        h.state_mut().tabs[1].text.push_str("unsaved");
+        h.state_mut().active = Some(n - 1);
+        h.run_steps(3);
+        let keep = h.state().tabs[n - 1].path.clone();
+        h.get_by_role_and_label(Role::Tab, &folder_name(&keep)).click_secondary();
+        h.run_steps(3);
+        h.get_by_label_contains("Close others").click();
+        h.run_steps(30);
+        assert!(h.query_by_label_contains("Save the changes to 2 files?").is_some());
+        h.get_by_label("Don't save").click();
+        h.run_steps(3);
+        assert_eq!(h.state().tabs.iter().map(|t| t.path.clone()).collect::<Vec<_>>(), [keep.clone()]);
+        assert_eq!(h.state().active, Some(0));
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

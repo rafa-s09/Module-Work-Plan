@@ -336,7 +336,9 @@ fn inline(s: &str, put: &mut impl FnMut(&str, Color32), p: &Palette) {
 
 /// Toolbar, source and preview for the open file.
 /// Returns how the user settled a conflict with the disk, when they did.
-pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resolve> {
+/// The editor of one tab. Returns how a conflict with the disk was settled, and the file of an
+/// ID that was clicked (in the preview, or Ctrl+click in the source).
+pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode, find_id: FindId) -> (Option<Resolve>, Option<PathBuf>) {
     let resolve = conflict_bar(ui, ed);
     let mut change: Option<CCursorRange> = None;
     ui.horizontal(|ui| {
@@ -390,19 +392,20 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resol
     let id = ed.id();
     let status_h = ui.spacing().interact_size.y;
     let body = egui::vec2(ui.available_width(), (ui.available_height() - status_h - ui.spacing().item_spacing.y).max(0.0));
-    ui.allocate_ui(body, |ui| match *mode {
-        Mode::Edit => source(ui, ed, id),
-        Mode::Preview => preview(ui, ed),
+    let open = ui.allocate_ui(body, |ui| match *mode {
+        Mode::Edit => source(ui, ed, id, find_id),
+        Mode::Preview => preview(ui, ed, find_id),
         Mode::Split => {
             let area = ui.max_rect();
-            ui.columns(2, |cols| {
-                source(&mut cols[0], ed, id);
-                preview(&mut cols[1], ed);
+            let open = ui.columns(2, |cols| {
+                let a = source(&mut cols[0], ed, id, find_id);
+                preview(&mut cols[1], ed, find_id).or(a)
             });
             // A line where the source ends and the preview starts, in the gap between the columns.
             ui.painter().vline(area.center().x, area.y_range(), ui.visuals().widgets.noninteractive.bg_stroke);
+            open
         }
-    });
+    }).inner;
     // Align::Min: a centred right-to-left layout would take all the height it is offered.
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| ui.weak(line_info));
 
@@ -413,7 +416,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode) -> Option<Resol
         ui.ctx().memory_mut(|m| m.request_focus(id));
         ed.cursor = Some(range);
     }
-    resolve
+    (resolve, open)
 }
 
 /// The find bar: query, match case, "n of m", previous / next, close. Enter and F3 go to the next
@@ -550,7 +553,9 @@ fn conflict_bar(ui: &mut egui::Ui, ed: &mut Editor) -> Option<Resolve> {
     resolve
 }
 
-fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
+/// The source view; returns the file of an ID that was Ctrl+clicked.
+fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id, find_id: FindId) -> Option<PathBuf> {
+    let mut open = None;
     let font = egui::TextStyle::Monospace.resolve(ui.style());
     let p = palette(ui.visuals());
     let digits = ed.text.lines().count().max(1).to_string().len().max(3) as f32;
@@ -573,6 +578,12 @@ fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
             .show(ui);
         if out.cursor_range.is_some() {
             ed.cursor = out.cursor_range;
+        }
+        // Ctrl+click on an ID opens its file; the click has put the cursor on it.
+        if out.response.clicked() && ui.input(|i| i.modifiers.command) {
+            if let Some(r) = out.cursor_range {
+                open = find_id(&id_at(&ed.text, r.primary.index.0));
+            }
         }
         let to_galley = out.galley_pos.to_vec2();
         if let Some(f) = ed.find.as_mut().filter(|f| f.reveal) {
@@ -614,9 +625,88 @@ fn source(ui: &mut egui::Ui, ed: &mut Editor, id: egui::Id) {
             }
         }
     });
+    open
 }
 
-fn preview(ui: &mut egui::Ui, ed: &mut Editor) {
+/// Finds the file of a project or module ID (`T-0007`, `SP-0001`, `ADR-0002`, `order`).
+pub type FindId<'a> = &'a dyn Fn(&str) -> Option<PathBuf>;
+
+/// The project IDs (`T-`, `SP-`, `ADR-`) a link is made for.
+const LINKED: [&str; 3] = ["T-", "SP-", "ADR-"];
+
+/// The Markdown body with every ID that `known` accepts made a `mwp:<id>` link, and the IDs linked:
+/// project IDs in the text, and module or project IDs written as code (`` `order` ``, `` `order#FR-01` ``).
+/// Code blocks, file names (`T-0007-slug.md`) and link targets are left alone.
+// shortcut: a line scan, not a Markdown parse: an ID in an indented code block or inside a link's text is linked too.
+pub fn link_ids(body: &str, known: &dyn Fn(&str) -> bool) -> (String, Vec<String>) {
+    let (mut out, mut ids, mut fence) = (String::with_capacity(body.len()), Vec::new(), false);
+    for line in body.split_inclusive('\n') {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fence = !fence;
+        }
+        let parts: Vec<&str> = line.split('`').collect();
+        // Inside a fence, or a backtick left open: as it is.
+        if fence || t.starts_with("```") || t.starts_with("~~~") || parts.len().is_multiple_of(2) {
+            out.push_str(line);
+            continue;
+        }
+        for (i, part) in parts.iter().enumerate() {
+            if i % 2 == 0 {
+                link_text(part, known, &mut out, &mut ids);
+                continue;
+            }
+            let id = part.split('#').next().unwrap_or("");
+            if !id.is_empty() && known(id) {
+                out.push_str(&format!("[`{part}`](mwp:{id})"));
+                ids.push(id.to_string());
+            } else {
+                out.push_str(&format!("`{part}`"));
+            }
+        }
+    }
+    (out, ids)
+}
+
+/// The project IDs in plain text made links; see `link_ids`.
+fn link_text(s: &str, known: &dyn Fn(&str) -> bool, out: &mut String, ids: &mut Vec<String>) {
+    let b = s.as_bytes();
+    let joined = |c: u8| c.is_ascii_alphanumeric() || c == b'-' || c == b'_';
+    let (mut i, mut last) = (0, 0);
+    while i < b.len() {
+        // An ASCII capital first, so `s[i..]` is on a char boundary.
+        let starts = b[i].is_ascii_uppercase() && (i == 0 || !(joined(b[i - 1]) || matches!(b[i - 1], b'/' | b'[' | b'(')));
+        if let Some(p) = LINKED.iter().find(|p| starts && s[i..].starts_with(*p)) {
+            let digits = s[i + p.len()..].bytes().take_while(u8::is_ascii_digit).count();
+            let end = i + p.len() + digits;
+            // Bytes, but only cut at ASCII positions, so always on a char boundary.
+            if digits > 0 && (end == b.len() || !(joined(b[end]) || b[end] == b']')) && known(&s[i..end]) {
+                let id = &s[i..end];
+                out.push_str(&s[last..i]);
+                out.push_str(&format!("[{id}](mwp:{id})"));
+                ids.push(id.to_string());
+                (i, last) = (end, end);
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out.push_str(&s[last..]);
+}
+
+/// The word under a char position, as an ID to look up: `T-0007`, `order` (`order#FR-01` gives `order`).
+fn id_at(text: &str, at: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let part = |c: &char| c.is_alphanumeric() || matches!(c, '-' | '_' | '#');
+    let start = chars[..at.min(chars.len())].iter().rposition(|c| !part(c)).map_or(0, |i| i + 1);
+    let end = chars[start..].iter().position(|c| !part(c)).map_or(chars.len(), |i| start + i);
+    let word: String = chars[start..end].iter().collect();
+    word.split('#').next().unwrap_or("").to_string()
+}
+
+/// The rendered file; returns the file of an ID link that was clicked.
+fn preview(ui: &mut egui::Ui, ed: &mut Editor, find_id: FindId) -> Option<PathBuf> {
+    let mut open = None;
     egui::Frame::NONE.inner_margin(egui::Margin::symmetric(16, 8)).show(ui, |ui| {
         egui::ScrollArea::vertical().id_salt(("preview", &ed.path)).auto_shrink([false, false]).show(ui, |ui| {
             let (fm, body) = split_front_matter(&ed.text).unwrap_or(("", &ed.text));
@@ -630,7 +720,25 @@ fn preview(ui: &mut egui::Ui, ed: &mut Editor) {
                             let v = v.strip_prefix('[').and_then(|x| x.strip_suffix(']')).unwrap_or(v).trim();
                             if !v.is_empty() {
                                 ui.weak(k.trim());
-                                ui.label(v);
+                                // Values that name other docs (modules, refs, owner...) link to them; not the doc's own id.
+                                let items: Vec<(&str, Option<PathBuf>)> = v.split(',').map(|x| x.trim().trim_matches(['"', '\''])).map(|x| (x, if k.trim() == "id" { None } else { find_id(x) })).collect();
+                                if items.iter().any(|x| x.1.is_some()) {
+                                    let count = items.len();
+                                    ui.horizontal_wrapped(|ui| {
+                                        for (n, (item, path)) in items.into_iter().enumerate() {
+                                            let last = if n + 1 < count { "," } else { "" };
+                                            match path {
+                                                Some(p) if ui.link(format!("{item}{last}")).on_hover_text("Open").clicked() => open = Some(p),
+                                                Some(_) => {}
+                                                None => {
+                                                    ui.label(format!("{item}{last}"));
+                                                }
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    ui.label(v);
+                                }
                                 ui.end_row();
                             }
                         }
@@ -638,9 +746,18 @@ fn preview(ui: &mut egui::Ui, ed: &mut Editor) {
                 });
                 ui.add_space(8.0);
             }
-            CommonMarkViewer::new().show(ui, &mut ed.cache, body);
+            let (body, ids) = link_ids(body, &|id| find_id(id).is_some());
+            ed.cache.link_hooks_clear();
+            for id in &ids {
+                ed.cache.add_link_hook(format!("mwp:{id}"));
+            }
+            CommonMarkViewer::new().show(ui, &mut ed.cache, &body);
+            if let Some(id) = ids.iter().find(|id| ed.cache.get_link_hook(&format!("mwp:{id}")) == Some(true)) {
+                open = find_id(id);
+            }
         });
     });
+    open
 }
 
 #[cfg(test)]
@@ -725,6 +842,18 @@ mod tests {
         ed.open_find(false);
         let f = ed.find.as_ref().unwrap();
         assert_eq!((f.query.as_str(), f.current, f.replace.is_none()), ("alpha", Some((4, 9)), true));
+    }
+
+    #[test]
+    fn ids_become_links_only_when_they_exist() {
+        let known = |id: &str| ["T-0007", "SP-0001", "order"].contains(&id);
+        let body = "See — T-0007, T-0099 and SP-0001.\nNot TEST-0007, T-0007-slug.md, [T-0007](x) or mwp/T-0007.\nModule `order`, `order#FR-01`, `nope`.\n```\nT-0007 `order`\n```\nUnclosed `T-0007\n";
+        let (out, ids) = link_ids(body, &known);
+        assert_eq!(out, "See — [T-0007](mwp:T-0007), T-0099 and [SP-0001](mwp:SP-0001).\nNot TEST-0007, T-0007-slug.md, [T-0007](x) or mwp/T-0007.\nModule [`order`](mwp:order), [`order#FR-01`](mwp:order), `nope`.\n```\nT-0007 `order`\n```\nUnclosed `T-0007\n");
+        assert_eq!(ids, ["T-0007", "SP-0001", "order", "order"]);
+        // Ctrl+click: the word under the cursor.
+        let text = "uses order#FR-01 and  T-0007. é";
+        assert_eq!((id_at(text, 6), id_at(text, 24), id_at(text, 21)), ("order".into(), "T-0007".into(), "".into()));
     }
 
     #[test]
