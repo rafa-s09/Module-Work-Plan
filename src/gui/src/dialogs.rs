@@ -466,6 +466,49 @@ impl App {
                             });
                         }
                     });
+                    // Each change applies at once, so the dialog itself shows the result.
+                    section(ui, tr("Appearance"), |ui| {
+                        ui.label(tr("Theme"));
+                        ui.horizontal(|ui| {
+                            for (theme, _, label) in prefs::THEMES {
+                                if ui.selectable_value(&mut self.theme, theme, tr(label)).changed() {
+                                    prefs::apply_theme(ctx, theme);
+                                }
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            let size = egui::Slider::new(&mut self.font_scale, prefs::SCALE_MIN..=prefs::SCALE_MAX).step_by(0.1).custom_formatter(|v, _| format!("{:.0}%", v * 100.0)).text(tr("Text size"));
+                            if ui.add(size).changed() {
+                                prefs::apply_scale(ctx, self.font_scale);
+                            }
+                            if self.font_scale != 1.0 && ui.button(tr("Default")).clicked() {
+                                self.font_scale = 1.0;
+                                prefs::apply_scale(ctx, 1.0);
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.label(tr("Text font"));
+                        ui.horizontal(|ui| {
+                            ui.strong(match &self.font {
+                                Some(f) => folder_name(f),
+                                None => tr("Default").to_string(),
+                            });
+                            if ui.button(ic(ICON_FOLDER_OPEN, tr("Choose…"))).on_hover_text(tr("A TrueType or OpenType file (.ttf, .otf)")).clicked() {
+                                if let Some(file) = rfd::FileDialog::new().set_title(tr("Text font")).add_filter(tr("Fonts"), &["ttf", "otf", "ttc"]).pick_file() {
+                                    match prefs::apply_font(ctx, Some(&file)) {
+                                        Ok(()) => (self.font, *error) = (Some(file), String::new()),
+                                        Err(e) => *error = e,
+                                    }
+                                }
+                            }
+                            if self.font.is_some() && ui.button(tr("Default")).clicked() {
+                                self.font = None;
+                                *error = prefs::apply_font(ctx, None).err().unwrap_or_default();
+                            }
+                        });
+                        ui.weak(tr("Used by the menus, dialogs and preview; the source editor keeps its monospace font."));
+                    });
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| close = ui.add(primary(ui, tr("Close"))).clicked());

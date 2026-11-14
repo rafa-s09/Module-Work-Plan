@@ -8,6 +8,7 @@ mod editor;
 mod explorer;
 mod i18n;
 mod layout;
+mod prefs;
 mod search;
 mod tabs;
 
@@ -152,6 +153,10 @@ struct App {
     title: String,
     /// The language of the GUI (see `i18n`).
     lang: String,
+    /// Appearance (see `prefs`).
+    theme: prefs::Theme,
+    font_scale: f32,
+    font: Option<PathBuf>,
     /// The tabs each project had open, kept between runs (see `layout`).
     saved_tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
     /// The board filters of each project, kept between runs.
@@ -180,6 +185,9 @@ impl App {
             search: Search::default(),
             title: String::new(),
             lang: "en".into(),
+            theme: prefs::Theme::System,
+            font_scale: 1.0,
+            font: None,
             saved_tabs: BTreeMap::new(),
             saved_filters: BTreeMap::new(),
         };
@@ -218,8 +226,15 @@ impl App {
                 Ok(()) => app.lang = l.lang,
                 Err(e) => app.message = Some(e),
             }
+            (app.theme, app.font_scale, app.font) = (prefs::Theme::from_code(&l.theme), l.scale, l.font);
             app.restore_project();
         }
+        // A font file that went missing or broke leaves egui's font, and says why.
+        if let Err(e) = prefs::apply_font(&cc.egui_ctx, app.font.as_deref()) {
+            (app.message, app.font) = (Some(e), None);
+        }
+        prefs::apply_theme(&cc.egui_ctx, app.theme);
+        prefs::apply_scale(&cc.egui_ctx, app.font_scale);
         app
     }
 
@@ -394,7 +409,7 @@ impl eframe::App for App {
     /// Called by eframe now and then and on exit; the window and panels it keeps itself.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.keep_project();
-        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, lang: self.lang.clone(), tabs: self.saved_tabs.clone(), filters: self.saved_filters.clone() };
+        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, lang: self.lang.clone(), theme: self.theme.code().into(), scale: self.font_scale, font: self.font.clone(), tabs: self.saved_tabs.clone(), filters: self.saved_filters.clone() };
         storage.set_string(layout::KEY, l.text());
     }
 
@@ -667,16 +682,8 @@ impl eframe::App for App {
                         ui.horizontal(|ui| {
                             let (icon, color) = file_icon(ui, &v.project, &ed.path);
                             ui.label(icon.rich_text().size(28.0).color(color));
-                            ui.vertical(|ui| {
-                                let title = match doc {
-                                    Some(d) if !d.id().is_empty() => format!("{}  {}", d.id(), d.title()).trim_end().to_string(),
-                                    _ => ed.name(),
-                                };
-                                ui.label(RichText::new(title).heading().strong());
-                                let mut meta = vec![v.project.rel(&ed.path)];
-                                meta.extend(["status", "size", "type", "agent"].iter().filter_map(|k| doc.map(|d| d.get(k)).filter(|s| !s.is_empty()).map(|s| format!("{k}: {s}"))));
-                                dim(ui, meta.join("   ·   "));
-                            });
+                            // The buttons first, from the right; the title and path get the width left and
+                            // are cut with an ellipsis, so they never run under the buttons (larger text, long paths).
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if deletable.is_some() && ui.button(ic(ICON_DELETE, tr("Delete"))).on_hover_text(tr("Delete this file")).clicked() {
                                     ask.ask_delete = deletable.clone();
@@ -692,6 +699,18 @@ impl eframe::App for App {
                                 if stale && ed.path == v.project.mwp.join("map.md") {
                                     update_map |= ui.button(ic(ICON_REFRESH, tr("Update map.md"))).on_hover_text(tr("Rebuild the module table from the modules, like mwp remap")).clicked();
                                 }
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.vertical(|ui| {
+                                        let title = match doc {
+                                            Some(d) if !d.id().is_empty() => format!("{}  {}", d.id(), d.title()).trim_end().to_string(),
+                                            _ => ed.name(),
+                                        };
+                                        ui.add(egui::Label::new(RichText::new(title).heading().strong()).truncate());
+                                        let mut meta = vec![v.project.rel(&ed.path)];
+                                        meta.extend(["status", "size", "type", "agent"].iter().filter_map(|k| doc.map(|d| d.get(k)).filter(|s| !s.is_empty()).map(|s| format!("{k}: {s}"))));
+                                        dim(ui, meta.join("   ·   "));
+                                    });
+                                });
                             });
                         });
                         ui.separator();
@@ -1537,6 +1556,13 @@ mod tests {
         h.run_steps(3);
         assert_eq!(h.state().lang, "pt-BR");
         h.get_by_label("Arquivo"); // the File menu, translated
+        // The light theme applies at once; then back to the system's.
+        h.get_by_label("Claro").click();
+        h.run_steps(3);
+        assert!(h.state().theme == prefs::Theme::Light && h.ctx.theme() == egui::Theme::Light);
+        h.get_by_label("Seguir o sistema").click();
+        h.run_steps(3);
+        assert_eq!(h.state().theme, prefs::Theme::System);
         h.get_by_label("Fechar").click();
         h.run_steps(3);
         i18n::set("en").unwrap();

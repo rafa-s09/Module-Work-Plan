@@ -18,6 +18,7 @@ Tudo o que estava planejado entrou, e o `Cargo.toml` já diz `0.1.1`:
 
 ## Já na v0.1.2
 
+- **Aparência:** tema (escuro, claro ou do sistema), tamanho e fonte do texto em Settings > Preferences.
 - **Configurações e idiomas:** Settings > Preferences escolhe o idioma da GUI (inglês ou português do Brasil), a partir de arquivos JSON em `<config>/mwp-gui/lang/` que se podem copiar e traduzir para outros idiomas.
 - **Help > About:** a arte do projeto (`assets/icone/help_art.png`), as versões da GUI e do core, a descrição e a licença.
 - **Conflitos com o disco, parte 2:** **Show changes** na barra de conflito lista só as linhas que diferem (as da aba e as do disco, marcadas); um arquivo apagado no disco ganha uma barra com **Save again** e **Close tab**, e o Ctrl+S não o recria sozinho.
@@ -37,7 +38,7 @@ Todos os itens foram feitos.
 ## Qualidade e manutenção
 
 - **Testar fora do Windows:** Linux e macOS (o `open_external` usa `xdg-open` e `open`, nunca testados).
-- **Testar o tema claro:** as cores fixas dos ícones e dos destaques foram escolhidas no tema escuro.
+- **Tema claro:** visto no quadro, no explorador e no editor; ainda falta conferir os diálogos e as barras de conflito, cujas cores fixas foram escolhidas no tema escuro.
 - **Testes que faltam:** Recortar / Copiar / Colar pelo menu Edit, arrastar arquivos para a janela, "Copy path", "Show in folder", e os arrastes do quadro e do explorador (hoje vistos só na janela real).
 - **Clippy:** o único aviso que sobra é um tipo complexo em `editor.rs` (`type_complexity`).
 
@@ -49,6 +50,5 @@ Ideias maiores, para uma v0.2 ou depois:
 
 - **WYSIWYG de verdade:** editar direto no texto renderizado. O egui não tem esse componente; seria um projeto à parte.
 - **Integração com git:** ver o que mudou desde o último commit, por arquivo.
-- **Temas e tamanho de fonte** configuráveis.
 - **Integração com Agentes** locais e externos via API
 - **Execuçao direta** para agentes na task (`Execulte Task`)

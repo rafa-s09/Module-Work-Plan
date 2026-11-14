@@ -4,6 +4,7 @@ What changed in each version of the desktop editor. The plan for the next one is
 
 ## 0.1.2 (unreleased)
 
+- **Appearance:** theme (dark, light or the system's), text size and text font in Settings > Preferences. The file header no longer runs under its buttons with larger text.
 - **Settings > Preferences** and **languages:** the GUI in English or Brazilian Portuguese, from JSON files in `<config>/mwp-gui/lang/` that anyone can copy and translate for another language.
 - **Help > About:** the project art, the versions of the GUI and of the core, the description and the license.
 - **Conflicts with the disk:** **Show changes** in the conflict bar lists only the lines that differ, marked `-` (only in your edits) and `+` (only on disk).
