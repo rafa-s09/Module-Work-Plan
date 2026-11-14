@@ -147,6 +147,8 @@ struct App {
     title: String,
     /// The tabs each project had open, kept between runs (see `layout`).
     saved_tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
+    /// The board filters of each project, kept between runs.
+    saved_filters: BTreeMap<PathBuf, [String; 4]>,
 }
 
 impl App {
@@ -171,6 +173,7 @@ impl App {
             search: Search::default(),
             title: String::new(),
             saved_tabs: BTreeMap::new(),
+            saved_filters: BTreeMap::new(),
         };
         app.remember();
         app
@@ -199,24 +202,32 @@ impl App {
         let mut app = App::new(root);
         if let Some(text) = cc.storage.and_then(|s| s.get_string(layout::KEY)) {
             let l = Layout::parse(&text);
-            (app.mode, app.show_done, app.show_problems, app.saved_tabs) = (l.mode, l.show_done, l.show_problems, l.tabs);
-            app.restore_tabs();
+            (app.mode, app.show_done, app.show_problems) = (l.mode, l.show_done, l.show_problems);
+            (app.saved_tabs, app.saved_filters) = (l.tabs, l.filters);
+            app.restore_project();
         }
         app
     }
 
-    /// Records the open tabs of this project in `saved_tabs`.
-    fn keep_tabs(&mut self) {
+    /// Records the open tabs and the board filters of this project.
+    fn keep_project(&mut self) {
         if self.view.is_ok() {
             let tabs = self.tabs.iter().map(|e| rel_to(&self.root, &e.path)).collect();
             let active = self.current().map(|e| rel_to(&self.root, &e.path));
             self.saved_tabs.insert(project_key(&self.root), (active, tabs));
+            self.saved_filters.insert(project_key(&self.root), self.board_filter.fields());
         }
     }
 
-    /// Opens the tabs this project had last time, those whose file is still there.
-    fn restore_tabs(&mut self) {
-        let Some((active, tabs)) = self.saved_tabs.get(&project_key(&self.root)).cloned() else { return };
+    /// Opens the tabs this project had last time, those whose file is still there, and sets
+    /// its board filters back.
+    fn restore_project(&mut self) {
+        let key = project_key(&self.root);
+        self.board_filter = match (self.saved_filters.get(&key).cloned(), &self.view) {
+            (Some(f), Ok(v)) => BoardFilter::from_fields(f, &v.project),
+            _ => BoardFilter::default(),
+        };
+        let Some((active, tabs)) = self.saved_tabs.get(&key).cloned() else { return };
         self.tabs = tabs.iter().filter_map(|r| Editor::open(&self.root.join(r)).ok()).collect();
         self.active = active.and_then(|a| self.tabs.iter().position(|e| rel_to(&self.root, &e.path) == a));
     }
@@ -310,12 +321,12 @@ impl App {
             }
             Action::MoveTab(..) => {}
             Action::Project(dir, open_project) => {
-                self.keep_tabs();
+                self.keep_project();
                 self.root = dir;
                 (self.tabs, self.active) = (Vec::new(), None);
                 self.reload();
                 self.remember();
-                self.restore_tabs();
+                self.restore_project();
                 if open_project {
                     self.apply(ctx, Action::Open(self.root.join("mwp/PROJECT.md")));
                 }
@@ -368,8 +379,8 @@ impl App {
 impl eframe::App for App {
     /// Called by eframe now and then and on exit; the window and panels it keeps itself.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        self.keep_tabs();
-        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, tabs: self.saved_tabs.clone() };
+        self.keep_project();
+        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, tabs: self.saved_tabs.clone(), filters: self.saved_filters.clone() };
         storage.set_string(layout::KEY, l.text());
     }
 

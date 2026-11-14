@@ -185,6 +185,20 @@ impl BoardFilter {
             && (self.size.is_empty() || t.get("size") == self.size)
     }
 
+    /// The filter as it is kept between runs (see `layout`): text, module, agent, size.
+    pub fn fields(&self) -> [String; 4] {
+        [self.text.clone(), self.module.clone(), self.agent.clone(), self.size.clone()]
+    }
+
+    /// A kept filter back, without a module, agent or size the project no longer has: those
+    /// would hide every card with nothing in the menus to say why.
+    pub fn from_fields([text, module, agent, size]: [String; 4], p: &Project) -> BoardFilter {
+        let module = if p.by_id("module", &module).is_some() { module } else { String::new() };
+        let agent = if p.of_kind("task").any(|t| t.get("agent") == agent) { agent } else { String::new() };
+        let size = if SIZES.iter().any(|s| s.0 == size) { size } else { String::new() };
+        BoardFilter { text, module, agent, size }
+    }
+
     fn active(&self) -> bool {
         !(self.text.trim().is_empty() && self.module.is_empty() && self.agent.is_empty() && self.size.is_empty())
     }
@@ -362,5 +376,20 @@ mod tests {
         assert!(!filter("login", "", "", "").keeps(&t));
         assert!(filter("", "cart", "codex", "M").keeps(&t));
         assert!(!filter("", "billing", "", "").keeps(&t) && !filter("", "", "claude", "").keeps(&t) && !filter("", "", "", "S").keeps(&t));
+    }
+
+    #[test]
+    fn kept_filter_drops_what_the_project_lost() {
+        let root = std::env::temp_dir().join(format!("mwp-kept-filter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        scaffold::init(&root, Some("Demo"), &[], false).unwrap();
+        fs::write(root.join("mwp/modules/order.md"), "---\nkind: module\nid: order\ntype: domain\nsummary: Orders\nupdated: 2026-01-01\n---\n# order\n").unwrap();
+        fs::write(root.join("mwp/tasks/open/T-0001-a.md"), "---\nkind: task\nid: T-0001\nstatus: in_progress\nsize: S\nmodules: [order]\nagent: codex\n---\n# T-0001 — A\n").unwrap();
+        let p = Project::open(&root).unwrap();
+        let f = BoardFilter::from_fields(["a".into(), "order".into(), "codex".into(), "S".into()], &p);
+        assert_eq!(f.fields(), ["a", "order", "codex", "S"]);
+        let f = BoardFilter::from_fields(["a".into(), "billing".into(), "claude".into(), "XL".into()], &p);
+        assert_eq!(f.fields(), ["a", "", "", ""], "a module, agent or size no longer there is dropped");
+        let _ = fs::remove_dir_all(&root);
     }
 }

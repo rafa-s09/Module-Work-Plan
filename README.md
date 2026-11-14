@@ -116,7 +116,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
 - **File > New project** creates a project (folder, name, agents, skills), like `mwp init`. **File > Open project** browses for a folder or reopens one of the 5 recent projects, also listed on the start screen.
 - **Help > About** shows the versions of the GUI and of the core, and the license.
-- The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode and each project's open tabs. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.
+- The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode, and each project's open tabs and board filters. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.
 
 It rereads the project every 2 seconds, so it follows what agents change.
 
@@ -126,7 +126,7 @@ Install it with the installer's `--gui` / `-Gui` option, or on its own:
 cargo install --path src/gui --locked
 ```
 
-Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`.
+Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`. What changed in each version is in its [CHANGELOG](src/gui/CHANGELOG.md).
 
 ## Repository
 

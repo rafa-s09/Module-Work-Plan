@@ -1,6 +1,6 @@
 //! What the window remembers between runs besides what eframe keeps itself (window size and
 //! place, panel sizes, collapsed sections): the editor mode, the board and panel switches, and
-//! the open tabs of each project. Kept as plain lines in eframe's storage; a line that does not
+//! the open tabs and the board filters of each project. Kept as plain lines in eframe's storage; a line that does not
 //! read is skipped, so a damaged file loses only that line.
 
 use super::*;
@@ -15,11 +15,13 @@ pub struct Layout {
     pub show_problems: bool,
     /// By project folder (absolute): the open tab and the tabs, as paths relative to the project.
     pub tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
+    /// By project folder: the board filters (text, module, agent, size).
+    pub filters: BTreeMap<PathBuf, [String; 4]>,
 }
 
 impl Default for Layout {
     fn default() -> Layout {
-        Layout { mode: Mode::Split, show_done: false, show_problems: true, tabs: BTreeMap::new() }
+        Layout { mode: Mode::Split, show_done: false, show_problems: true, tabs: BTreeMap::new(), filters: BTreeMap::new() }
     }
 }
 
@@ -38,6 +40,13 @@ impl Layout {
                     let active = f.next().filter(|a| !a.is_empty()).map(str::to_string);
                     l.tabs.insert(PathBuf::from(root), (active, f.filter(|p| !p.is_empty()).map(str::to_string).collect()));
                 }
+                (Some("filter"), Some(root)) if !root.is_empty() => {
+                    let mut v: [String; 4] = Default::default();
+                    for (slot, field) in v.iter_mut().zip(f) {
+                        *slot = field.to_string();
+                    }
+                    l.filters.insert(PathBuf::from(root), v);
+                }
                 _ => {}
             }
         }
@@ -49,6 +58,11 @@ impl Layout {
         let mut out = format!("mode\t{mode}\nshow_done\t{}\nshow_problems\t{}\n", self.show_done as u8, self.show_problems as u8);
         for (root, (active, tabs)) in &self.tabs {
             out += &format!("tabs\t{}\t{}\t{}\n", root.display(), active.as_deref().unwrap_or(""), tabs.join("\t"));
+        }
+        for (root, v) in self.filters.iter().filter(|f| f.1.iter().any(|x| !x.is_empty())) {
+            // A tab or a line break typed in the filter would break the line format.
+            let v: Vec<String> = v.iter().map(|x| x.replace(['\t', '\n', '\r'], " ")).collect();
+            out += &format!("filter\t{}\t{}\n", root.display(), v.join("\t"));
         }
         out
     }
@@ -73,9 +87,14 @@ mod tests {
         let mut l = Layout { mode: Mode::Preview, show_done: true, show_problems: false, ..Layout::default() };
         l.tabs.insert(PathBuf::from("/p/one"), (Some("mwp/map.md".into()), vec!["mwp/PROJECT.md".into(), "mwp/map.md".into()]));
         l.tabs.insert(PathBuf::from("/p/two"), (None, vec![]));
+        l.filters.insert(PathBuf::from("/p/one"), ["check\tout".into(), "order".into(), String::new(), "M".into()]);
+        l.filters.insert(PathBuf::from("/p/two"), Default::default());
         let back = Layout::parse(&l.text());
         assert!(back.mode == Mode::Preview && back.show_done && !back.show_problems);
         assert_eq!(back.tabs, l.tabs);
+        // A tab typed in the filter is kept as a space; an empty filter is not written at all.
+        assert_eq!(back.filters.get(Path::new("/p/one")), Some(&["check out".to_string(), "order".into(), String::new(), "M".into()]));
+        assert_eq!(back.filters.len(), 1);
 
         // Garbage lines are skipped; what still reads is kept.
         let back = Layout::parse("mode\tzoom\n\u{0}\u{1}junk\ntabs\t\nshow_done\t1\ntabs\t/p/one\t\tmwp/a.md\n");

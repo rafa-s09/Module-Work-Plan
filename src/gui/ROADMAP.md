@@ -20,28 +20,21 @@ Tudo o que estava planejado entrou, e o `Cargo.toml` já diz `0.1.1`:
 
 - **Help > About:** a arte do projeto (`assets/icone/help_art.png`), as versões da GUI e do core, a descrição e a licença.
 - **Conflitos com o disco, parte 2:** **Show changes** na barra de conflito lista só as linhas que diferem (as da aba e as do disco, marcadas); um arquivo apagado no disco ganha uma barra com **Save again** e **Close tab**, e o Ctrl+S não o recria sozinho.
+- **Filtros do quadro** lembrados por projeto, junto com as abas.
+- **CHANGELOG** da GUI (`CHANGELOG.md`), com a 0.1.0, a 0.1.1 e a 0.1.2. O `Cargo.toml` sobe para `0.1.2` quando a versão fechar.
 
 ## Prioridade 1: entra na v0.1.2
 
-### 1. Lembrar os filtros do quadro
-- **O quê:** guardar os filtros do quadro por projeto, junto com as abas.
-- **Por quê:** a janela já volta como foi deixada; só os filtros se perdem ao fechar.
-- **Por onde começar:** `BoardFilter` em `board.rs` e o formato de linhas de `layout.rs`.
-- **Pronto quando:** fechar e abrir mantém os filtros; um filtro por um módulo que sumiu é ignorado.
-
-### 2. CHANGELOG
-- **O quê:** um `CHANGELOG.md` da GUI, com a v0.1.1 (a lista acima) e o que entrar na v0.1.2.
-- **Por quê:** os READMEs dizem o que a GUI faz, não o que mudou entre versões.
-- **Pronto quando:** cada versão tem a sua seção, e a v0.1.2 sobe o `Cargo.toml` para `0.1.2`.
+Todos os itens foram feitos. O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md).
 
 ## Prioridade 2: entra se der tempo
 
-### 3. Abrir arquivo rápido (Ctrl+P)
+### 1. Abrir arquivo rápido (Ctrl+P)
 - **O quê:** uma caixa que filtra os arquivos de `mwp/` por nome, ID ou título enquanto se digita; Enter abre.
 - **Por quê:** num projeto grande, achar um arquivo pelo explorador exige abrir seções; é o atalho mais usado em editores.
 - **Por onde começar:** `View.tree` já tem todos os arquivos com ID e título; o diálogo pode seguir o padrão de `dialogs.rs`.
 
-### 4. Substituir no projeto
+### 2. Substituir no projeto
 - **O quê:** um campo **Replace** na aba Search, com **Replace all** em todos os arquivos encontrados.
 - **Cuidado:** arquivos abertos com alterações não salvas ficam de fora ou são trocados só na aba; nada é gravado por cima de uma edição.
 - **Por onde começar:** `search.rs` (os `Hit` já têm arquivo e posição) e `Editor::replace_all`.
