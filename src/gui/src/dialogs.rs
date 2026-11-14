@@ -27,6 +27,8 @@ pub enum Dialog {
     /// File > Project agents: `agents` checked, by `AGENTS` order; `installed` ones stay checked.
     /// `update` rewrites the installed agents' skills with this version.
     Agents { agents: Vec<bool>, installed: Vec<bool>, update: bool, error: String },
+    /// Help > About: the art (loaded when the dialog opens), the versions and the license.
+    About { art: Option<egui::TextureHandle> },
     /// Rename a file or folder; `name` starts as its current name.
     Rename { path: PathBuf, name: String, error: String },
     /// A message with an OK button, for an action that could not be done.
@@ -40,6 +42,16 @@ pub enum Dialog {
 impl App {
     pub fn new_project_dialog(&self) -> Dialog {
         Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
+    }
+
+    /// About, with assets/icone/help_art.png decoded into a texture.
+    pub fn about_dialog(ctx: &egui::Context) -> Dialog {
+        let png: &[u8] = include_bytes!("../../../assets/icone/help_art.png");
+        let art = eframe::icon_data::from_png_bytes(png).ok().map(|i| {
+            let image = egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba);
+            ctx.load_texture("help-art", image, egui::TextureOptions::LINEAR)
+        });
+        Dialog::About { art }
     }
 
     /// Rename, for a file or folder the explorer may rename.
@@ -408,6 +420,25 @@ impl App {
                         }
                         close = ui.add(secondary("Cancel")).clicked();
                     });
+                });
+            }
+            Dialog::About { art } => {
+                egui::Modal::new(egui::Id::unique("about")).show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.vertical_centered(|ui| {
+                        if let Some(art) = art {
+                            ui.add(egui::Image::new(&*art).fit_to_exact_size(egui::vec2(180.0, 180.0)).alt_text("MWP mascot"));
+                        }
+                        ui.heading(RichText::new("MWP").strong());
+                        ui.label("Module Work Plan");
+                        ui.add_space(6.0);
+                        ui.weak(format!("mwp-gui {}  ·  mwp core {}", env!("CARGO_PKG_VERSION"), mwp_core::VERSION));
+                        ui.add_space(6.0);
+                        ui.label(env!("CARGO_PKG_DESCRIPTION"));
+                        ui.weak(format!("License: {}", env!("CARGO_PKG_LICENSE")));
+                    });
+                    ui.separator();
+                    right_row(ui, |ui| close = ui.add(primary(ui, "OK")).clicked());
                 });
             }
             Dialog::Rename { path, name, error } => {

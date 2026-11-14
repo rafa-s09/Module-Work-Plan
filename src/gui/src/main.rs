@@ -520,6 +520,11 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.show_done, "Done tasks on the board");
                     ui.checkbox(&mut self.show_problems, "Bottom panel (Problems, Search)");
                 });
+                ui.menu_button("Help", |ui| {
+                    if ui.button(ic(ICON_INFO, "About MWP…")).clicked() {
+                        self.dialog = Some(App::about_dialog(&ctx));
+                    }
+                });
             });
         });
 
@@ -1398,6 +1403,17 @@ mod tests {
         assert!(renamed.exists() && !auth.exists());
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(renamed.clone()));
         assert_eq!(Project::open(&root).unwrap().by_id("module", "user-auth").unwrap().path, renamed);
+
+        // Help > About: the art and both versions.
+        h.get_by_label("Help").click();
+        h.run_steps(3);
+        h.get_by_label_contains("About MWP…").click();
+        h.run_steps(30);
+        assert!(matches!(&h.state().dialog, Some(Dialog::About { art: Some(_) })), "the art decodes");
+        h.get_by_label(&format!("mwp-gui {}  ·  mwp core {}", env!("CARGO_PKG_VERSION"), mwp_core::VERSION));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        assert!(h.state().dialog.is_none());
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

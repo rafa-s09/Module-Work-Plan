@@ -1,9 +1,9 @@
 [package]
 name = "mwp-gui"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.95"
-description = "Desktop board for MWP (Module Work Plan): tasks, agents, locked modules and lint."
+description = "Desktop editor for MWP (Module Work Plan): the mwp/ files, the task board, agents and lint."
 license = "Apache-2.0"
 
 [[bin]]

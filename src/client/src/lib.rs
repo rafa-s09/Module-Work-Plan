@@ -6,3 +6,6 @@ pub mod lint;
 pub mod ops;
 pub mod scaffold;
 pub mod state;
+
+/// The version of the core (and of the `mwp` CLI built with it).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
