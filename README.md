@@ -97,7 +97,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 
 ## Editor (GUI)
 
-`mwp-gui` is an optional desktop editor for the person following the work:
+`mwp-gui` (version 0.1.2) is an optional desktop editor for the person following the work:
 
 - **Explorer** of the `mwp/` files by section (project, modules with their subfolders, SPECs, ADRs, then tasks split into open and done; right-click Modules or a folder to add a module or a folder there), with broken files in red, and the agents at work with the modules they lock. **Rename** a file or folder (right-click, or F2 for the open file; a module keeps its ID) and drag files and folders onto another folder of Modules or Content to move them; ADRs and done tasks stay as they are.
 - **Markdown editor** with tabs: highlighted source with line numbers, a formatting toolbar (headings, bold, italic, code, lists, checklists, quotes, links) and a live preview, side by side or alone. The front matter shows as a property table in the preview.
@@ -117,7 +117,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
 - **File > New project** creates a project (folder, name, agents, skills), like `mwp init`. **File > Open project** browses for a folder or reopens one of the 5 recent projects, also listed on the start screen.
 - **Settings > Preferences** sets the theme (dark, light or the system's), the text size (80% to 160%) and the text font (any TrueType or OpenType file; the source editor keeps its monospace font), all applied at once and remembered. It also picks the language of the GUI: English and Brazilian Portuguese come with it. Each language is a JSON file in `<config>/mwp-gui/lang/` (on Windows, `%APPDATA%\mwp-gui\lang\`) that maps the English texts to their translation; copy `en.json` to `<code>.json` and translate it to add another, and a text missing from a file stays in English. Messages from the core (lint lines, errors) stay in English.
-- **Help > About** shows the versions of the GUI and of the core, and the license.
+- **Help > About** shows the project art, the versions of the GUI and of the core, and the license.
 - The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode, and each project's open tabs and board filters. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.
 
 It rereads the project every 2 seconds, so it follows what agents change.
