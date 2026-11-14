@@ -68,3 +68,5 @@ Ideias maiores, para uma v0.2 ou depois:
 - **Interface em português:** hoje a GUI é toda em inglês; traduzir exige separar os textos do código.
 - **Integração com git:** ver o que mudou desde o último commit, por arquivo.
 - **Temas e tamanho de fonte** configuráveis.
+- **Integração com Agentes** locais e externos via API
+- **Execuçao direta** para agentes na task (`Execulte Task`)
