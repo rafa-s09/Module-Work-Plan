@@ -62,6 +62,21 @@ pub fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     task_status_items(ui, id, status, cmd);
 }
 
+/// Accept / Reject in the header of a proposed ADR (laid out right to left). Only a person
+/// decides an ADR, so the CLI agents use has no such command.
+pub fn adr_buttons(ui: &mut egui::Ui, adr: &Doc, decide: &mut Option<(String, &'static str)>) {
+    if adr.get("status") != "proposed" {
+        return;
+    }
+    let accept = egui::Button::new(ic(ICON_CHECK_CIRCLE, "Accept")).fill(ui.visuals().selection.bg_fill);
+    if ui.add(accept).on_hover_text("Set status: accepted. The decision is in force from now on").clicked() {
+        *decide = Some((adr.id().to_string(), "accepted"));
+    }
+    if ui.button(ic(ICON_CANCEL, "Reject")).on_hover_text("Set status: rejected").clicked() {
+        *decide = Some((adr.id().to_string(), "rejected"));
+    }
+}
+
 /// The Context button of a task's header: what an agent loads for the task, like `mwp context`,
 /// with a token estimate and the cited IDs that do not exist. A file opens on click.
 pub fn context_button(ui: &mut egui::Ui, p: &Project, t: &Doc, ask: &mut Asks) {

@@ -10,27 +10,15 @@ Todos os itens foram feitos.
 
 ## Prioridade 2: entra se der tempo
 
-### 1. Status de ADR
-- **O quê:** botões **Accept** e **Reject** no cabeçalho de um ADR `proposed`.
-- **Por onde começar:** `set_field` no core; seguir o padrão de `task_buttons`.
-
-### 2. Agentes do projeto
-- **O quê:** um diálogo para adicionar agentes a um projeto existente e atualizar as skills, como o `mwp init --agent` e o `--update-skills`.
-- **Por onde começar:** `scaffold::installed`, `scaffold::init` (que nunca sobrescreve) e `scaffold::update_skills`.
-
-### 3. Preview de imagens
-- **O quê:** imagens de `content/` abrem numa aba de visualização, e imagens do Markdown aparecem no preview.
-- **Por onde começar:** os carregadores de imagem do `egui_extras` e o recurso de imagens do `egui_commonmark` (hoje desligado no `Cargo.toml`). Avaliar o peso das dependências antes.
-
-### 4. Renomear e mover
+### 1. Renomear e mover
 - **O quê:** renomear e mover arquivos e pastas pelo explorador (arrastar para outra pasta ou F2).
 - **Cuidado:** renomear o arquivo de um módulo não muda o ID; mudar o ID exigiria atualizar as citações em tasks, SPECs e no `map.md`, e fica para depois.
 
-### 5. Conflitos com o disco, parte 2
+### 2. Conflitos com o disco, parte 2
 - **O quê:** na barra de conflito, mostrar a diferença linha a linha em vez da versão inteira; avisar quando o arquivo aberto foi apagado no disco (hoje salvar o recria sem aviso).
 - **Por onde começar:** `conflict_bar` e `Editor::refresh` em `editor.rs`.
 
-### 6. Filtros no quadro
+### 3. Filtros no quadro
 - **O quê:** filtrar os cartões por módulo, agente e tamanho, e buscar pelo título.
 
 ## Qualidade e manutenção

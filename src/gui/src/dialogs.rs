@@ -24,6 +24,9 @@ pub enum Dialog {
     NewAdr { title: String, modules: Vec<(String, bool)>, adrs: Vec<(String, String)>, supersedes: String, error: String },
     /// `agents`: the agents set up in the project, offered as choices; `modules`: what it locks.
     StartTask { id: String, agent: String, agents: Vec<String>, modules: Vec<String>, error: String },
+    /// File > Project agents: `agents` checked, by `AGENTS` order; `installed` ones stay checked.
+    /// `update` rewrites the installed agents' skills with this version.
+    Agents { agents: Vec<bool>, installed: Vec<bool>, update: bool, error: String },
     /// A message with an OK button, for an action that could not be done.
     Notice { title: String, text: String },
     /// `owners`: the modules, then the tasks not done.
@@ -35,6 +38,14 @@ pub enum Dialog {
 impl App {
     pub fn new_project_dialog(&self) -> Dialog {
         Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
+    }
+
+    /// Project agents, with the agents whose skills are set up here checked.
+    pub fn agents_dialog(&self) -> Option<Dialog> {
+        self.view.as_ref().ok()?;
+        let here = scaffold::installed(&self.root);
+        let installed: Vec<bool> = AGENTS.iter().map(|a| here.iter().any(|h| h.id == a.id)).collect();
+        Some(Dialog::Agents { agents: installed.clone(), update: installed.contains(&true), installed, error: String::new() })
     }
 
     /// New task, with the module open in the editor already checked.
@@ -94,6 +105,7 @@ impl App {
         let mut close = false;
         let mut deleted: Option<PathBuf> = None;
         let mut changed = false; // the dialog changed the project without opening a file
+        let mut next: Option<Dialog> = None; // shown in place of this one
         let root = self.root.clone();
         let recent = self.recent.clone();
         match self.dialog.as_mut()? {
@@ -331,6 +343,55 @@ impl App {
                     });
                 });
             }
+            Dialog::Agents { agents, installed, update, error } => {
+                egui::Modal::new(egui::Id::unique("agents")).show(ctx, |ui| {
+                    ui.set_width(540.0);
+                    dialog_title(ui, ICON_SMART_TOY, "Project agents");
+                    ui.weak("Adds the instruction file and the skills of each agent you check, like mwp init --agent. Existing files are never overwritten.");
+                    ui.add_space(12.0);
+                    section(ui, "Agents", |ui| {
+                        egui::Grid::new("project-agents").num_columns(3).spacing([24.0, 6.0]).show(ui, |ui| {
+                            for ((on, here), a) in agents.iter_mut().zip(installed.iter()).zip(AGENTS.iter()) {
+                                ui.add_enabled(!here, egui::Checkbox::new(on, a.name));
+                                ui.weak(format!("{}  ·  {}", a.pointer, a.skills));
+                                ui.weak(if *here { "set up" } else { "" });
+                                ui.end_row();
+                            }
+                        });
+                    });
+                    let any_here = installed.contains(&true);
+                    section(ui, "Skills", |ui| {
+                        ui.add_enabled(any_here, egui::Checkbox::new(update, "Update the skills of the agents already set up to this version"));
+                        ui.weak("Like mwp init --update-skills: rewrites only their mwp and module skills.");
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        let new: Vec<&scaffold::Agent> = AGENTS.iter().zip(agents.iter().zip(installed.iter())).filter(|(_, (on, here))| **on && !**here).map(|(a, _)| a).collect();
+                        let here: Vec<&scaffold::Agent> = AGENTS.iter().zip(installed.iter()).filter(|(_, h)| **h).map(|(a, _)| a).collect();
+                        let update = *update && any_here;
+                        if ui.add_enabled(!new.is_empty() || update, primary(ui, "Apply")).clicked() {
+                            let mut lines = Vec::new();
+                            let done = (if new.is_empty() { Ok(Vec::new()) } else { scaffold::init(&root, None, &new, true) })
+                                .and_then(|l| {
+                                    lines.extend(l);
+                                    if update { scaffold::update_skills(&root, &here) } else { Ok(Vec::new()) }
+                                });
+                            match done {
+                                Ok(l) => {
+                                    lines.extend(l);
+                                    let changes: Vec<&str> = lines.iter().filter(|l| l.starts_with("create") || l.starts_with("update")).map(String::as_str).collect();
+                                    let text = if changes.is_empty() { "Nothing to change: the files were already there and the skills up to date.".to_string() } else { changes.join("\n") };
+                                    next = Some(Dialog::Notice { title: "Project agents".into(), text });
+                                    changed = true;
+                                }
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close = ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
             Dialog::Notice { title, text } => {
                 egui::Modal::new(egui::Id::unique("notice")).show(ctx, |ui| {
                     ui.set_width(420.0);
@@ -489,6 +550,9 @@ impl App {
         close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if close || action.is_some() || deleted.is_some() {
             self.dialog = None;
+        }
+        if next.is_some() {
+            self.dialog = next;
         }
         if let Some(path) = deleted {
             if let Some(i) = self.tabs.iter().position(|t| t.path == path) {

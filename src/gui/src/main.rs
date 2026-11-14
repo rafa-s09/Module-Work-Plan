@@ -113,6 +113,10 @@ struct Asks {
     shown_tab: Option<PathBuf>,
     /// A project search match to select once its file is open (chars in the file).
     reveal: Option<(PathBuf, (usize, usize))>,
+    /// Accept or reject a proposed ADR: its ID and the new status.
+    adr_decide: Option<(String, &'static str)>,
+    /// File > Project agents.
+    agents: bool,
 }
 
 struct App {
@@ -451,6 +455,8 @@ impl eframe::App for App {
                     ask.new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, "New SPEC…"))).clicked();
                     ask.new_adr = ui.add_enabled(project, egui::Button::new(ic(ICON_GAVEL, "New ADR…"))).clicked();
                     ui.separator();
+                    ask.agents = ui.add_enabled(project, egui::Button::new(ic(ICON_SMART_TOY, "Project agents…"))).clicked();
+                    ui.separator();
                     let dirty = self.current().is_some_and(Editor::dirty);
                     save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, "Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
                     let any = self.tabs.iter().any(Editor::dirty);
@@ -627,6 +633,9 @@ impl eframe::App for App {
                                     task_buttons(ui, t, &mut ask.task_cmd);
                                     context_button(ui, &v.project, t, &mut ask);
                                 }
+                                if let Some(a) = doc.filter(|d| d.kind() == "adr") {
+                                    adr_buttons(ui, a, &mut ask.adr_decide);
+                                }
                                 let stale = v.report.errors.iter().any(|e| e.starts_with(MAP_STALE));
                                 if stale && ed.path == v.project.mwp.join("map.md") {
                                     update_map |= ui.button(ic(ICON_REFRESH, "Update map.md")).on_hover_text("Rebuild the module table from the modules, like mwp remap").clicked();
@@ -665,6 +674,18 @@ impl eframe::App for App {
         }
         if let Some(cmd) = ask.task_cmd {
             self.run_task_cmd(cmd);
+        }
+        if let Some((id, status)) = ask.adr_decide {
+            // As for tasks: the step rewrites the file, so unsaved edits come first.
+            let dirty = self.view.as_ref().ok().and_then(|v| v.project.by_id("adr", &id)).is_some_and(|a| self.tabs.iter().any(|e| e.path == a.path && e.dirty()));
+            let done = if dirty { Err("The ADR has unsaved changes. Save them before deciding it.".to_string()) } else { Project::open(&self.root).and_then(|p| ops::adr_decide(&p, &id, status)) };
+            match done {
+                Ok(_) => self.reload(),
+                Err(text) => self.dialog = Some(Dialog::Notice { title: format!("Cannot change {id}"), text }),
+            }
+        }
+        if ask.agents {
+            self.dialog = self.agents_dialog();
         }
         if let Some((i, how)) = resolve {
             let mine = matches!(how, editor::Resolve::Mine);
@@ -1141,6 +1162,27 @@ mod tests {
         assert_eq!(p.by_id("adr", "ADR-0001").unwrap().get("status"), "superseded");
         assert_eq!(p.by_id("adr", "ADR-0002").unwrap().list("modules"), ["user-auth"]);
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(p.by_id("adr", "ADR-0002").unwrap().path.clone()));
+
+        // The new ADR is proposed: Accept in its header puts it in force; the buttons go away.
+        h.run_steps(3);
+        h.get_by_label_contains("Accept").click();
+        h.run_steps(3);
+        assert_eq!(Project::open(&root).unwrap().by_id("adr", "ADR-0002").unwrap().get("status"), "accepted");
+        assert!(h.query_by_label_contains("Accept").is_none() && h.query_by_label_contains("Reject").is_none());
+
+        // File > Project agents: add Codex; Claude, already set up, stays checked.
+        h.get_all_by_label("File").next().unwrap().click();
+        h.run_steps(3);
+        h.get_by_label_contains("Project agents…").click();
+        h.run_steps(30);
+        h.get_by_label("OpenAI Codex").click();
+        h.run_steps(3);
+        h.get_by_label("Apply").click();
+        h.run_steps(30);
+        assert!(root.join(".agents/skills/mwp/SKILL.md").exists() && root.join("AGENTS.md").exists());
+        assert!(matches!(&h.state().dialog, Some(Dialog::Notice { text, .. }) if text.contains("create .agents/skills/mwp/SKILL.md")));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
 
         // Content: right-click > New folder, add a file (twice: never replaced), then delete it.
         h.get_all_by_label_contains("Content").next().unwrap().click_secondary();

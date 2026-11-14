@@ -326,6 +326,20 @@ pub fn adr_new(p: &Project, title: &str, modules: Option<&str>, supersedes: Opti
     Ok(lines)
 }
 
+/// A person accepts or rejects a proposed ADR: sets `status` and `date`. The body is not touched.
+pub fn adr_decide(p: &Project, id: &str, status: &str) -> Lines {
+    if !matches!(status, "accepted" | "rejected") {
+        return Err("an ADR is accepted or rejected".into());
+    }
+    let adr = p.by_id("adr", id).ok_or(format!("no adr `{id}`"))?;
+    if adr.get("status") != "proposed" {
+        return Err(format!("{id} is {}, not proposed", adr.get("status")));
+    }
+    let t = read(&adr.path).ok_or(format!("cannot read {id}"))?;
+    write(&adr.path, set_field(&set_field(&t, "status", status), "date", &today()))?;
+    Ok(vec![format!("update {} (status: {status})", p.rel(&adr.path))])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,6 +371,17 @@ mod tests {
         assert_eq!(c.missing, ["T-0404 (refs)"]);
         assert!(c.tokens() > 0 && c.tokens() == c.files.iter().map(|f| f.2).sum::<u64>());
         delete(&p, &p.by_id("task", "T-0003").unwrap().path).unwrap();
+
+        // A proposed ADR is accepted (or rejected) once; the body stays as it was.
+        adr_new(&open(), "Use Postgres", Some("order"), None).unwrap();
+        let body = |p: &Project| crate::doc::split_front_matter(&read(&p.by_id("adr", "ADR-0001").unwrap().path).unwrap()).unwrap().1.to_string();
+        let before = body(&open());
+        assert!(adr_decide(&open(), "ADR-0001", "superseded").is_err());
+        adr_decide(&open(), "ADR-0001", "accepted").unwrap();
+        assert_eq!(open().by_id("adr", "ADR-0001").unwrap().get("status"), "accepted");
+        assert_eq!(body(&open()), before);
+        assert!(adr_decide(&open(), "ADR-0001", "rejected").unwrap_err().contains("not proposed"));
+        assert!(adr_decide(&open(), "ADR-0404", "accepted").is_err());
 
         task_start(&open(), "T-0001", "claude").unwrap();
         assert!(task_start(&open(), "PROJ-9", "codex").unwrap_err().contains("T-0001"));
