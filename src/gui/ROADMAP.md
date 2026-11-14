@@ -19,34 +19,29 @@ Tudo o que estava planejado entrou, e o `Cargo.toml` já diz `0.1.1`:
 ## Já na v0.1.2
 
 - **Help > About:** a arte do projeto (`assets/icone/help_art.png`), as versões da GUI e do core, a descrição e a licença.
+- **Conflitos com o disco, parte 2:** **Show changes** na barra de conflito lista só as linhas que diferem (as da aba e as do disco, marcadas); um arquivo apagado no disco ganha uma barra com **Save again** e **Close tab**, e o Ctrl+S não o recria sozinho.
 
 ## Prioridade 1: entra na v0.1.2
 
-### 1. Conflitos com o disco, parte 2
-- **O quê:** na barra de conflito, mostrar a diferença linha a linha em vez da versão inteira; avisar quando o arquivo aberto foi apagado no disco.
-- **Por quê:** hoje a barra mostra o arquivo inteiro do disco, e achar o que mudou é trabalho manual; salvar um arquivo apagado o recria sem aviso.
-- **Por onde começar:** `conflict_bar` e `Editor::refresh` em `editor.rs`. Um diff de linhas simples (maior subsequência comum) basta para arquivos do tamanho de um módulo.
-- **Pronto quando:** as linhas só do disco e só da aba aparecem marcadas; um arquivo apagado mostra uma barra com **Save again** e **Close tab**.
-
-### 2. Lembrar os filtros do quadro
+### 1. Lembrar os filtros do quadro
 - **O quê:** guardar os filtros do quadro por projeto, junto com as abas.
 - **Por quê:** a janela já volta como foi deixada; só os filtros se perdem ao fechar.
 - **Por onde começar:** `BoardFilter` em `board.rs` e o formato de linhas de `layout.rs`.
 - **Pronto quando:** fechar e abrir mantém os filtros; um filtro por um módulo que sumiu é ignorado.
 
-### 3. CHANGELOG
+### 2. CHANGELOG
 - **O quê:** um `CHANGELOG.md` da GUI, com a v0.1.1 (a lista acima) e o que entrar na v0.1.2.
 - **Por quê:** os READMEs dizem o que a GUI faz, não o que mudou entre versões.
 - **Pronto quando:** cada versão tem a sua seção, e a v0.1.2 sobe o `Cargo.toml` para `0.1.2`.
 
 ## Prioridade 2: entra se der tempo
 
-### 4. Abrir arquivo rápido (Ctrl+P)
+### 3. Abrir arquivo rápido (Ctrl+P)
 - **O quê:** uma caixa que filtra os arquivos de `mwp/` por nome, ID ou título enquanto se digita; Enter abre.
 - **Por quê:** num projeto grande, achar um arquivo pelo explorador exige abrir seções; é o atalho mais usado em editores.
 - **Por onde começar:** `View.tree` já tem todos os arquivos com ID e título; o diálogo pode seguir o padrão de `dialogs.rs`.
 
-### 5. Substituir no projeto
+### 4. Substituir no projeto
 - **O quê:** um campo **Replace** na aba Search, com **Replace all** em todos os arquivos encontrados.
 - **Cuidado:** arquivos abertos com alterações não salvas ficam de fora ou são trocados só na aba; nada é gravado por cima de uma edição.
 - **Por onde começar:** `search.rs` (os `Hit` já têm arquivo e posição) e `Editor::replace_all`.

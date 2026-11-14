@@ -703,10 +703,20 @@ impl eframe::App for App {
             self.dialog = self.agents_dialog();
         }
         if let Some((i, how)) = resolve {
-            let mine = matches!(how, editor::Resolve::Mine);
-            self.tabs[i].resolve(how);
-            if mine {
-                self.save_tab(i);
+            match how {
+                // Closing goes through the usual question when the tab has edits.
+                editor::Resolve::Close => self.request(&ctx, Action::CloseTab(i)),
+                editor::Resolve::Recreate => {
+                    self.message = self.tabs[i].recreate().err();
+                    self.reload();
+                }
+                how => {
+                    let write = matches!(how, editor::Resolve::Mine);
+                    self.tabs[i].resolve(how);
+                    if write {
+                        self.save_tab(i);
+                    }
+                }
             }
         }
         if let Some(e) = ask.open_error {
@@ -1154,11 +1164,28 @@ mod tests {
         h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::S]);
         h.run_steps(3);
         assert_eq!(fs::read_to_string(&done).unwrap(), "agent wrote this\n");
-        h.get_by_label_contains("Show disk version").click();
+        h.get_by_label_contains("Show changes").click();
         h.run_steps(3);
+        // The changes, line by line: what only the tab has, what only the disk has.
+        h.get_by_label("- mine");
+        h.get_by_label("+ agent wrote this");
         h.get_by_label("Overwrite with mine").click();
         h.run_steps(3);
         assert!(fs::read_to_string(&done).unwrap().ends_with("mine\n") && !h.state().tabs[i].dirty() && h.state().tabs[i].disk.is_none());
+
+        // The open file is deleted on disk: a bar says so, Ctrl+S does not bring it back, Save again does.
+        let before = fs::read_to_string(&done).unwrap();
+        fs::remove_file(&done).unwrap();
+        h.state_mut().reload();
+        h.run_steps(3);
+        h.get_by_label("This file was deleted on disk.");
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::S]);
+        h.run_steps(3);
+        assert!(!done.exists());
+        h.get_by_label("Save again").click();
+        h.run_steps(3);
+        assert_eq!(fs::read_to_string(&done).unwrap(), before);
+        assert!(h.query_by_label("This file was deleted on disk.").is_none());
 
         // A module summary edited on disk leaves map.md stale; the problem's button rebuilds it.
         let stale = |h: &Harness<App>| h.state().view.as_ref().unwrap().report.errors.iter().any(|e| e.starts_with(MAP_STALE));

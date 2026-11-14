@@ -1,7 +1,7 @@
 //! The Markdown editor: one open file, its source view (highlighted, with line numbers and a
 //! formatting toolbar) and its rendered preview.
 
-use eframe::egui::{self, text::CCursor, text::LayoutJob, text_selection::CCursorRange, Color32, FontId, TextFormat};
+use eframe::egui::{self, text::CCursor, text::LayoutJob, text_selection::CCursorRange, Color32, FontId, RichText, TextFormat};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use egui_material_icons::{icons::*, MaterialIcon};
 use mwp_core::doc::split_front_matter;
@@ -27,8 +27,11 @@ pub struct Editor {
     /// The file as it is on disk, when someone else changed it while this tab has unsaved edits.
     /// Saving is refused until the user picks a version.
     pub disk: Option<String>,
-    /// The disk version is shown under the conflict bar.
+    /// The changes against the disk version are shown under the conflict bar.
     show_disk: bool,
+    /// The file is no longer on disk (deleted, or moved by someone else). Saving is refused
+    /// until the user saves it again on purpose (`recreate`) or closes the tab.
+    pub gone: bool,
     /// The find bar, while it is open.
     pub find: Option<Find>,
 }
@@ -72,13 +75,53 @@ pub enum Resolve {
     Mine,
     /// Drop the edits and load the disk version.
     Disk,
+    /// The file was deleted on disk: write it again from the tab.
+    Recreate,
+    /// The file was deleted on disk: close the tab (asking first when it has edits).
+    Close,
+}
+
+/// The lines of `mine` and `disk` in order, each marked ' ' (in both), '-' (only in the tab)
+/// or '+' (only on disk).
+pub fn line_diff<'a>(mine: &'a str, disk: &'a str) -> Vec<(char, &'a str)> {
+    let (a, b): (Vec<&str>, Vec<&str>) = (mine.lines().collect(), disk.lines().collect());
+    // The same start and end are kept out of the table, which then only holds the changed middle.
+    let pre = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let suf = a[pre..].iter().rev().zip(b[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
+    let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
+    let mut out: Vec<(char, &str)> = a[..pre].iter().map(|l| (' ', *l)).collect();
+    // shortcut: a full longest-common-subsequence table, fine for module-sized files; use a
+    // Myers diff if conflicts on files with thousands of changed lines become common.
+    let (n, m) = (am.len(), bm.len());
+    let at = |i: usize, j: usize| i * (m + 1) + j;
+    let mut t = vec![0u32; (n + 1) * (m + 1)];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            t[at(i, j)] = if am[i] == bm[j] { t[at(i + 1, j + 1)] + 1 } else { t[at(i + 1, j)].max(t[at(i, j + 1)]) };
+        }
+    }
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && am[i] == bm[j] {
+            out.push((' ', am[i]));
+            (i, j) = (i + 1, j + 1);
+        } else if i < n && (j == m || t[at(i + 1, j)] >= t[at(i, j + 1)]) {
+            out.push(('-', am[i]));
+            i += 1;
+        } else {
+            out.push(('+', bm[j]));
+            j += 1;
+        }
+    }
+    out.extend(a[a.len() - suf..].iter().map(|l| (' ', *l)));
+    out
 }
 
 impl Editor {
     pub fn open(path: &Path) -> Result<Editor, String> {
         let raw = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = raw.replace("\r\n", "\n");
-        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default(), disk: None, show_disk: false, find: None })
+        Ok(Editor { path: path.to_path_buf(), saved: text.clone(), text, crlf: raw.contains("\r\n"), cursor: None, cache: CommonMarkCache::default(), disk: None, show_disk: false, gone: false, find: None })
     }
 
     /// Opens the find bar (or focuses it), with the selection as the query when it is on one line.
@@ -169,20 +212,42 @@ impl Editor {
     /// Writes the tab, unless the file changed on disk since it was loaded or saved: then the
     /// change is kept in `disk` and nothing is written, so neither version is lost.
     pub fn save(&mut self) -> Result<(), String> {
+        // Writing now would bring back a file someone deleted: only the bar's Save again does that.
+        if self.gone || !self.path.exists() {
+            self.gone = true;
+            return Err(format!("{} was deleted on disk: save it again or close the tab", self.name()));
+        }
         // Read again here: an agent may have written since the last refresh.
         if let Some((disk, _)) = self.read_disk().filter(|(d, _)| *d != self.saved && *d != self.text) {
             self.disk = Some(disk);
             return Err(format!("{} changed on disk: choose which version to keep", self.name()));
         }
+        self.write()
+    }
+
+    /// Writes the tab to its file, with the file's own line endings.
+    fn write(&mut self) -> Result<(), String> {
         let text = if self.crlf { self.text.replace('\n', "\r\n") } else { self.text.clone() };
         fs::write(&self.path, text).map_err(|e| format!("cannot save {}: {e}", self.path.display()))?;
         (self.saved, self.disk) = (self.text.clone(), None);
         Ok(())
     }
 
+    /// Save again: writes a file that was deleted on disk back from the tab, its folder too.
+    pub fn recreate(&mut self) -> Result<(), String> {
+        if let Some(dir) = self.path.parent() {
+            fs::create_dir_all(dir).map_err(|e| format!("cannot save {}: {e}", self.path.display()))?;
+        }
+        self.write()?;
+        self.gone = false;
+        Ok(())
+    }
+
     /// Follows the file on disk (an agent may have changed it). With unsaved edits the tab keeps
     /// them and records the disk version as a conflict instead.
     pub fn refresh(&mut self) {
+        // A file that cannot be read but still exists (locked, mid-write) is left for the next refresh.
+        self.gone = !self.path.exists();
         let Some((disk, crlf)) = self.read_disk() else { return };
         if !self.dirty() {
             if disk != self.text {
@@ -201,7 +266,7 @@ impl Editor {
         match (how, self.read_disk()) {
             (Resolve::Mine, Some((disk, _))) => self.saved = disk,
             (Resolve::Disk, Some((disk, crlf))) => (self.text, self.saved, self.crlf) = (disk.clone(), disk, crlf),
-            (_, None) => {} // the file is gone: saving recreates it with the tab's text
+            _ => {} // Recreate and Close are done by the app; Mine / Disk with no file left change nothing
         }
         (self.disk, self.show_disk) = (None, false);
     }
@@ -334,9 +399,7 @@ fn inline(s: &str, put: &mut impl FnMut(&str, Color32), p: &Palette) {
     put(rest, p.text);
 }
 
-/// Toolbar, source and preview for the open file.
-/// Returns how the user settled a conflict with the disk, when they did.
-/// The editor of one tab. Returns how a conflict with the disk was settled, and the file of an
+/// The editor of one tab: toolbar, source and preview. Returns how a conflict with the disk was settled, and the file of an
 /// ID that was clicked (in the preview, or Ctrl+click in the source).
 pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode, find_id: FindId) -> (Option<Resolve>, Option<PathBuf>) {
     let resolve = conflict_bar(ui, ed);
@@ -519,8 +582,12 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
 }
 
 /// The warning shown while the file on disk and the tab's edits disagree, with the two ways out
-/// and the disk version on request (read-only, so parts of it can be copied into the edits).
+/// and, on request, the lines that differ. Or, when the file was deleted on disk, the bar that
+/// offers to save it again or close the tab.
 fn conflict_bar(ui: &mut egui::Ui, ed: &mut Editor) -> Option<Resolve> {
+    if ed.gone {
+        return gone_bar(ui);
+    }
     let disk = ed.disk.as_deref()?;
     let warn = ui.visuals().warn_fg_color;
     let mut resolve = None;
@@ -539,15 +606,71 @@ fn conflict_bar(ui: &mut egui::Ui, ed: &mut Editor) -> Option<Resolve> {
                 if ui.button("Overwrite with mine").on_hover_text("Save your edits over the disk version").clicked() {
                     resolve = Some(Resolve::Mine);
                 }
-                ui.toggle_value(&mut ed.show_disk, (ICON_VISIBILITY.rich_text(), "Show disk version"));
+                ui.toggle_value(&mut ed.show_disk, (ICON_DIFFERENCE.rich_text(), "Show changes"));
             });
         });
         if ed.show_disk {
             ui.add_space(4.0);
-            egui::ScrollArea::vertical().id_salt(("disk", &ed.path)).max_height(220.0).show(ui, |ui| {
-                ui.add(egui::TextEdit::multiline(&mut &*disk).code_editor().desired_width(f32::INFINITY));
-            });
+            diff_view(ui, &ed.text, disk, &ed.path);
         }
+    });
+    ui.add_space(4.0);
+    resolve
+}
+
+/// The lines that differ between the tab and the disk, with two lines around each change; longer
+/// runs of equal lines fold into one row. The text can be selected and copied.
+fn diff_view(ui: &mut egui::Ui, mine: &str, disk: &str, path: &Path) {
+    let diff = line_diff(mine, disk);
+    let near = |k: usize| diff[k.saturating_sub(2)..(k + 3).min(diff.len())].iter().any(|d| d.0 != ' ');
+    let v = ui.visuals().clone();
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("− only in your edits").monospace().color(v.error_fg_color));
+        ui.label(RichText::new("+ only on disk").monospace().color(Color32::from_rgb(90, 170, 100)));
+    });
+    egui::ScrollArea::vertical().id_salt(("diff", path)).max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let mut k = 0;
+        while k < diff.len() {
+            if !near(k) {
+                let run = (k..diff.len()).take_while(|&x| !near(x)).count();
+                ui.label(RichText::new(format!("  ⋯ {run} unchanged line{}", if run == 1 { "" } else { "s" })).monospace().weak());
+                k += run;
+                continue;
+            }
+            let (mark, line) = diff[k];
+            let text = RichText::new(format!("{mark} {line}")).monospace();
+            ui.label(match mark {
+                '-' => text.color(v.error_fg_color).background_color(v.error_fg_color.gamma_multiply(0.12)),
+                '+' => text.color(Color32::from_rgb(90, 170, 100)).background_color(Color32::from_rgba_unmultiplied(90, 170, 100, 30)),
+                _ => text.color(v.weak_text_color()),
+            });
+            k += 1;
+        }
+    });
+}
+
+/// The file of the tab is no longer on disk: save it again, or close the tab.
+fn gone_bar(ui: &mut egui::Ui) -> Option<Resolve> {
+    let err = ui.visuals().error_fg_color;
+    let mut resolve = None;
+    egui::Frame::new().fill(err.gamma_multiply(0.12)).stroke(egui::Stroke::new(1.0, err.gamma_multiply(0.5))).corner_radius(4).inner_margin(8).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(ICON_DELETE.rich_text().size(18.0).color(err));
+            ui.vertical(|ui| {
+                ui.strong("This file was deleted on disk.");
+                ui.weak("Saving is paused: save it again to bring it back, or close the tab.");
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Close tab").clicked() {
+                    resolve = Some(Resolve::Close);
+                }
+                if ui.button("Save again").on_hover_text("Write the file again from this tab").clicked() {
+                    resolve = Some(Resolve::Recreate);
+                }
+            });
+        });
     });
     ui.add_space(4.0);
     resolve
@@ -765,7 +888,7 @@ mod tests {
     use super::*;
 
     fn editor(text: &str, a: usize, b: usize) -> Editor {
-        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default(), disk: None, show_disk: false, find: None }
+        Editor { path: "x.md".into(), text: text.into(), saved: String::new(), crlf: false, cursor: Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))), cache: CommonMarkCache::default(), disk: None, show_disk: false, gone: false, find: None }
     }
 
     #[test]
@@ -817,7 +940,26 @@ mod tests {
         ed.refresh();
         ed.resolve(Resolve::Disk);
         assert!(!ed.dirty() && ed.disk.is_none() && ed.text == "agent 3\n" && ed.crlf);
+
+        // Deleted on disk: the tab says so and saving never brings the file back by itself.
+        fs::remove_file(&f).unwrap();
+        ed.refresh();
+        assert!(ed.gone);
+        ed.text.push_str("kept\n");
+        assert!(ed.save().is_err() && !f.exists());
+        // Save again writes it from the tab.
+        ed.recreate().unwrap();
+        assert!(!ed.gone && fs::read_to_string(&f).unwrap() == "agent 3\r\nkept\r\n");
         let _ = fs::remove_file(&f);
+    }
+
+    #[test]
+    fn line_diff_marks_each_side() {
+        let (mine, disk) = ("a\nb\nmine\nc\nd\n", "a\nb\ndisk\nc\nd\nnew\n");
+        assert_eq!(line_diff(mine, disk), [(' ', "a"), (' ', "b"), ('-', "mine"), ('+', "disk"), (' ', "c"), (' ', "d"), ('+', "new")]);
+        assert_eq!(line_diff("x\n", "x\n"), [(' ', "x")]);
+        assert_eq!(line_diff("", "y\n"), [('+', "y")]);
+        assert_eq!(line_diff("y\nz\n", ""), [('-', "y"), ('-', "z")]);
     }
 
     #[test]
