@@ -31,6 +31,10 @@ pub enum Dialog {
     About { art: Option<egui::TextureHandle> },
     /// Rename a file or folder; `name` starts as its current name.
     Rename { path: PathBuf, name: String, error: String },
+    /// Go to file (Ctrl+P): what is typed and the row picked with the arrows.
+    QuickOpen { query: String, selected: usize },
+    /// Confirm Replace all in the project: the replacement and what it would change.
+    ReplaceInProject { with: String, hits: usize, files: usize, open: usize },
     /// A message with an OK button, for an action that could not be done.
     Notice { title: String, text: String },
     /// `owners`: the modules, then the tasks not done.
@@ -136,6 +140,7 @@ impl App {
         let mut changed = false; // the dialog changed the project without opening a file
         let mut next: Option<Dialog> = None; // shown in place of this one
         let mut moved: Option<(PathBuf, PathBuf)> = None;
+        let mut replace_now: Option<String> = None;
         let root = self.root.clone();
         let recent = self.recent.clone();
         match self.dialog.as_mut()? {
@@ -422,6 +427,80 @@ impl App {
                     });
                 });
             }
+            Dialog::QuickOpen { query, selected } => {
+                let list: Vec<&Entry> = self.view.as_ref().map_or(Vec::new(), |v| quick_matches(&v.tree, query));
+                let modal = egui::Modal::new(egui::Id::unique("quick-open")).show(ctx, |ui| {
+                    ui.set_width(560.0);
+                    // The arrows pick a row; taken before the text box, which would move its cursor.
+                    let (down, up, enter) = ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown), i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp), i.key_pressed(egui::Key::Enter)));
+                    if down {
+                        *selected = (*selected + 1).min(list.len().saturating_sub(1));
+                    }
+                    if up {
+                        *selected = selected.saturating_sub(1);
+                    }
+                    let r = ui.add(egui::TextEdit::singleline(query).hint_text("File name, ID or title").desired_width(f32::INFINITY));
+                    if r.changed() {
+                        *selected = 0;
+                    }
+                    if !r.has_focus() && !r.lost_focus() {
+                        r.request_focus();
+                    }
+                    ui.add_space(6.0);
+                    let mut picked = enter.then(|| list.get(*selected).copied()).flatten();
+                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                        for (i, e) in list.iter().enumerate() {
+                            let Ok(v) = &self.view else { break };
+                            let (icon, color) = file_icon(ui, &v.project, &e.path);
+                            let row = (icon.rich_text().color(color), RichText::new(&e.id).strong(), RichText::new(&e.title), RichText::new(v.project.rel(&e.path)).weak());
+                            let r = ui.selectable_label(i == *selected, row);
+                            if i == *selected && (down || up) {
+                                r.scroll_to_me(None);
+                            }
+                            if r.clicked() {
+                                picked = Some(e);
+                            }
+                        }
+                        if list.is_empty() {
+                            ui.weak("No file matches.");
+                        }
+                    });
+                    picked.map(|e| e.path.clone())
+                });
+                close |= modal.should_close();
+                if let Some(path) = modal.inner {
+                    let external = path.starts_with(root.join("mwp/content")) && !TEXT_FILES.contains(&extension(&path).as_str());
+                    if external {
+                        self.message = open_external(&path, false).err();
+                    } else {
+                        action = Some(Action::Open(path));
+                    }
+                    close = true;
+                }
+            }
+            Dialog::ReplaceInProject { with, hits, files, open } => {
+                egui::Modal::new(egui::Id::unique("replace-project")).show(ctx, |ui| {
+                    ui.set_width(460.0);
+                    dialog_title(ui, ICON_FIND_REPLACE, "Replace in project");
+                    let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+                    let matches = if *hits == 1 { "1 match".to_string() } else { format!("{hits} matches") };
+                    ui.label(format!("Replace {matches} in {}?", plural(*files, "file")));
+                    let written = *files - *open;
+                    if written > 0 {
+                        ui.weak(format!("{} written now; the disk keeps no copy of the old text.", plural(written, "file")));
+                    }
+                    if *open > 0 {
+                        ui.weak(format!("{} open in a tab: changed there and left unsaved, so Ctrl+Z in the tab undoes it.", plural(*open, "file")));
+                    }
+                    ui.separator();
+                    right_row(ui, |ui| {
+                        if ui.add(primary(ui, "Replace")).clicked() {
+                            replace_now = Some(with.clone());
+                        }
+                        close = ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
             Dialog::About { art } => {
                 egui::Modal::new(egui::Id::unique("about")).show(ctx, |ui| {
                     ui.set_width(420.0);
@@ -635,6 +714,11 @@ impl App {
         }
         if next.is_some() {
             self.dialog = next;
+        }
+        if let Some(with) = replace_now {
+            let (n, failed) = self.replace_in_project(&with);
+            let text = if failed.is_empty() { format!("{n} replaced.") } else { format!("{n} replaced. Not written:\n{}", failed.join("\n")) };
+            self.dialog = Some(Dialog::Notice { title: "Replace in project".into(), text });
         }
         if let Some((from, to)) = moved {
             self.follow_move(&from, &to);

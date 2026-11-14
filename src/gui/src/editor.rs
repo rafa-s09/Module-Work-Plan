@@ -69,6 +69,17 @@ pub fn matches(text: &str, query: &str, case: bool) -> Vec<(usize, usize)> {
     out
 }
 
+/// Replaces every match of `query` in `text` with `with`; returns how many.
+pub fn replace_matches(text: &mut String, query: &str, case: bool, with: &str) -> usize {
+    let m = matches(text, query, case);
+    let bytes: Vec<usize> = text.char_indices().map(|(i, _)| i).chain([text.len()]).collect();
+    // From the end, so the offsets still to replace stay valid.
+    for &(a, b) in m.iter().rev() {
+        text.replace_range(bytes[a]..bytes[b], with);
+    }
+    m.len()
+}
+
 /// How the user settled a conflict between the tab's edits and the file on disk.
 pub enum Resolve {
     /// Write the tab's text over the disk version.
@@ -176,14 +187,9 @@ impl Editor {
     fn replace_all(&mut self) -> usize {
         let Some(f) = self.find.as_ref() else { return 0 };
         let Some(with) = f.replace.clone() else { return 0 };
-        let m = matches(&self.text, &f.query, f.case);
-        let bytes: Vec<usize> = self.text.char_indices().map(|(i, _)| i).chain([self.text.len()]).collect();
-        // From the end, so the offsets still to replace stay valid.
-        for &(a, b) in m.iter().rev() {
-            self.text.replace_range(bytes[a]..bytes[b], &with);
-        }
+        let n = replace_matches(&mut self.text, &f.query.clone(), f.case, &with);
         self.find.as_mut().unwrap().current = None;
-        m.len()
+        n
     }
 
     /// The next (or previous) match after the current one (or the cursor), wrapping around.

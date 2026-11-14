@@ -18,6 +18,8 @@ pub struct Search {
     pub case: bool,
     /// Give the query field the focus on the next frame.
     pub focus: bool,
+    /// The text Replace all puts in place of each match.
+    pub replace: String,
     pub hits: Vec<Hit>,
     /// What `hits` were found for: query, case and the project read they come from.
     found_for: Option<(String, bool, Instant)>,
@@ -29,12 +31,8 @@ pub const MAX_HITS: usize = 1000;
 /// Every match in the project's text files (templates `_*` left out, like the explorer does).
 /// An open tab is searched as it is in the editor, unsaved edits included.
 pub fn find_all(mwp: &Path, tabs: &[Editor], query: &str, case: bool) -> Vec<Hit> {
-    let mut files = Vec::new();
-    walk(mwp, &mut files);
-    files.retain(|f| TEXT_FILES.contains(&extension(f).as_str()) && !folder_name(f).starts_with('_'));
-    files.sort();
     let mut out = Vec::new();
-    for path in files {
+    for path in text_files(mwp) {
         let text = match tabs.iter().find(|t| t.path == path) {
             Some(t) => t.text.clone(),
             None => match fs::read_to_string(&path) {
@@ -54,6 +52,60 @@ pub fn find_all(mwp: &Path, tabs: &[Editor], query: &str, case: bool) -> Vec<Hit
         }
     }
     out
+}
+
+/// The text files the search reads, sorted: templates (`_*`) are left out, like the explorer does.
+pub fn text_files(mwp: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    walk(mwp, &mut files);
+    files.retain(|f| TEXT_FILES.contains(&extension(f).as_str()) && !folder_name(f).starts_with('_'));
+    files.sort();
+    files
+}
+
+/// What Replace all would change: the matches, the files they are in, and how many of those
+/// files are open in a tab. Unlike the list, it counts every match.
+pub fn replace_plan(mwp: &Path, tabs: &[Editor], query: &str, case: bool) -> (usize, usize, usize) {
+    let (mut hits, mut files, mut open) = (0, 0, 0);
+    for path in text_files(mwp) {
+        let tab = tabs.iter().find(|t| t.path == path);
+        let text = match tab {
+            Some(t) => t.text.clone(),
+            None => fs::read_to_string(&path).unwrap_or_default(),
+        };
+        let n = editor::matches(&text, query, case).len();
+        if n > 0 {
+            (hits, files, open) = (hits + n, files + 1, open + tab.is_some() as usize);
+        }
+    }
+    (hits, files, open)
+}
+
+impl App {
+    /// Replace all in the project. A file open in a tab is changed in the tab and left unsaved,
+    /// so nothing is written over an edit and a Ctrl+Z there undoes it; the others are written
+    /// now, keeping their line endings. Returns the matches replaced and the files that failed.
+    pub fn replace_in_project(&mut self, with: &str) -> (usize, Vec<String>) {
+        let (query, case) = (self.search.query.clone(), self.search.case);
+        let (mut n, mut failed) = (0, Vec::new());
+        for path in text_files(&self.root.join("mwp")) {
+            if let Some(t) = self.tabs.iter_mut().find(|t| t.path == path) {
+                n += editor::replace_matches(&mut t.text, &query, case, with);
+                continue;
+            }
+            // The query is one line, so matching the raw text (CRLF and all) finds the same matches.
+            let Ok(mut text) = fs::read_to_string(&path) else { continue };
+            let k = editor::replace_matches(&mut text, &query, case, with);
+            if k > 0 {
+                match fs::write(&path, text) {
+                    Ok(()) => n += k,
+                    Err(e) => failed.push(format!("{}: {e}", path.display())),
+                }
+            }
+        }
+        self.reload();
+        (n, failed)
+    }
 }
 
 impl Search {
@@ -112,6 +164,12 @@ pub fn search_panel(ui: &mut egui::Ui, v: &View, tabs: &[Editor], loaded: Instan
             n => format!("{} in {}", plural(n, "result"), plural(files, "file")),
         };
         ui.weak(count);
+    });
+    ui.horizontal(|ui| {
+        ui.label(ICON_FIND_REPLACE.rich_text().color(ui.visuals().weak_text_color()));
+        ui.add(egui::TextEdit::singleline(&mut s.replace).hint_text("Replace with").desired_width(320.0));
+        let all = egui::Button::new("Replace all…");
+        ask.replace_project |= ui.add_enabled(!s.hits.is_empty(), all).on_hover_text("Asks first, with the number of matches and files").clicked();
     });
     egui::ScrollArea::vertical().id_salt("search").auto_shrink([false, false]).show(ui, |ui| {
         let mut last: Option<&Path> = None;

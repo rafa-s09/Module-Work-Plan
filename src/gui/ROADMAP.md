@@ -22,6 +22,8 @@ Tudo o que estava planejado entrou, e o `Cargo.toml` já diz `0.1.1`:
 - **Conflitos com o disco, parte 2:** **Show changes** na barra de conflito lista só as linhas que diferem (as da aba e as do disco, marcadas); um arquivo apagado no disco ganha uma barra com **Save again** e **Close tab**, e o Ctrl+S não o recria sozinho.
 - **Filtros do quadro** lembrados por projeto, junto com as abas.
 - **CHANGELOG** da GUI (`CHANGELOG.md`), com a 0.1.0, a 0.1.1 e a 0.1.2. O `Cargo.toml` sobe para `0.1.2` quando a versão fechar.
+- **Abrir arquivo rápido (Ctrl+P):** File > Go to file filtra os arquivos por nome, ID ou título enquanto se digita.
+- **Substituir no projeto:** Replace all na aba Search, depois de confirmar; arquivos abertos mudam só na aba e ficam sem salvar, os outros são gravados.
 
 ## Prioridade 1: entra na v0.1.2
 
@@ -29,15 +31,7 @@ Todos os itens foram feitos. O que mudou em cada versão está no [CHANGELOG](CH
 
 ## Prioridade 2: entra se der tempo
 
-### 1. Abrir arquivo rápido (Ctrl+P)
-- **O quê:** uma caixa que filtra os arquivos de `mwp/` por nome, ID ou título enquanto se digita; Enter abre.
-- **Por quê:** num projeto grande, achar um arquivo pelo explorador exige abrir seções; é o atalho mais usado em editores.
-- **Por onde começar:** `View.tree` já tem todos os arquivos com ID e título; o diálogo pode seguir o padrão de `dialogs.rs`.
-
-### 2. Substituir no projeto
-- **O quê:** um campo **Replace** na aba Search, com **Replace all** em todos os arquivos encontrados.
-- **Cuidado:** arquivos abertos com alterações não salvas ficam de fora ou são trocados só na aba; nada é gravado por cima de uma edição.
-- **Por onde começar:** `search.rs` (os `Hit` já têm arquivo e posição) e `Editor::replace_all`.
+Todos os itens foram feitos.
 
 ## Qualidade e manutenção
 

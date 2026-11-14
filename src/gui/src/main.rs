@@ -45,6 +45,7 @@ const FIND: egui::KeyboardShortcut = key(CMD, egui::Key::F);
 const REPLACE: egui::KeyboardShortcut = key(CMD, egui::Key::H);
 const SEARCH: egui::KeyboardShortcut = key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::F);
 const CLOSE_TAB: egui::KeyboardShortcut = key(CMD, egui::Key::W);
+const GO_TO_FILE: egui::KeyboardShortcut = key(CMD, egui::Key::P);
 /// Next / previous tab. The Shift ones come first: Ctrl+Tab would also match Ctrl+Shift+Tab.
 const TAB_STEPS: [(egui::KeyboardShortcut, bool); 4] = [
     (key(CMD.plus(egui::Modifiers::SHIFT), egui::Key::Tab), false),
@@ -119,6 +120,8 @@ struct Asks {
     agents: bool,
     /// Rename this file (explorer menu).
     rename: Option<PathBuf>,
+    /// Replace all in the project (Search tab): ask first.
+    replace_project: bool,
 }
 
 struct App {
@@ -403,6 +406,9 @@ impl eframe::App for App {
                 self.save_tab(i);
             }
         }
+        if self.dialog.is_none() && self.view.is_ok() && ctx.input_mut(|i| i.consume_shortcut(&GO_TO_FILE)) {
+            self.dialog = Some(Dialog::QuickOpen { query: String::new(), selected: 0 });
+        }
         // F2 renames the open file, when it is one that can be renamed.
         if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F2)) {
             if let Some(path) = self.current().map(|e| e.path.clone()) {
@@ -468,6 +474,10 @@ impl eframe::App for App {
                     }
                     if ui.button(ic(ICON_FOLDER_OPEN, "Open project…")).clicked() {
                         self.dialog = Some(Dialog::Open { dir: self.root.display().to_string(), error: String::new() });
+                    }
+                    let go = egui::Button::new(ic(ICON_MANAGE_SEARCH, "Go to file…")).shortcut_text(ctx.format_shortcut(&GO_TO_FILE));
+                    if ui.add_enabled(self.view.is_ok(), go).clicked() {
+                        self.dialog = Some(Dialog::QuickOpen { query: String::new(), selected: 0 });
                     }
                     ui.separator();
                     let project = self.view.is_ok();
@@ -713,6 +723,10 @@ impl eframe::App for App {
         if ask.agents {
             self.dialog = self.agents_dialog();
         }
+        if ask.replace_project {
+            let (hits, files, open) = replace_plan(&self.root.join("mwp"), &self.tabs, &self.search.query, self.search.case);
+            self.dialog = Some(Dialog::ReplaceInProject { with: self.search.replace.clone(), hits, files, open });
+        }
         if let Some((i, how)) = resolve {
             match how {
                 // Closing goes through the usual question when the tab has edits.
@@ -922,6 +936,21 @@ mod tests {
         assert!(app.save_tab(0));
         assert_eq!(fs::read_to_string(&f).unwrap(), "a\r\nb\r\nc\r\n");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn go_to_file_ranks_starts_first() {
+        let e = |path: &str, id: &str, title: &str| Entry { path: PathBuf::from(path), id: id.into(), title: title.into(), ok: true };
+        let tree = vec![
+            ("Project", ICON_FOLDER, vec![e("mwp/map.md", "", "map.md")]),
+            ("Modules", ICON_EXTENSION, vec![e("mwp/modules/order.md", "order", "Orders and reorders"), e("mwp/modules/reorder.md", "reorder", "")]),
+            ("Open tasks", ICON_TASK, vec![e("mwp/tasks/open/T-0007-a.md", "T-0007", "Add order total")]),
+        ];
+        let ids = |q: &str| quick_matches(&tree, q).iter().map(|e| folder_name(&e.path)).collect::<Vec<_>>();
+        assert_eq!(ids("ORDER"), ["order.md", "reorder.md", "T-0007-a.md"], "the one that starts with it first, then explorer order");
+        assert_eq!(ids("t-0007"), ["T-0007-a.md"]);
+        assert_eq!(ids("").len(), 4);
+        assert!(ids("zzz").is_empty());
     }
 
     #[test]
@@ -1348,9 +1377,9 @@ mod tests {
         h.key_combination_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, &[egui::Key::F]);
         h.run_steps(3);
         assert!(h.state().show_search);
-        h.get_by_role(Role::TextInput).focus();
+        h.get_all_by_role(Role::TextInput).next().unwrap().focus(); // the query; Replace with is the second
         h.run_steps(2);
-        h.get_by_role(Role::TextInput).type_text("gamma");
+        h.get_all_by_role(Role::TextInput).next().unwrap().type_text("gamma");
         h.run_steps(3);
         h.get_by_label("1 result in 1 file");
         h.get_by_label("gamma alpha").click();
@@ -1441,6 +1470,45 @@ mod tests {
         assert!(renamed.exists() && !auth.exists());
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(renamed.clone()));
         assert_eq!(Project::open(&root).unwrap().by_id("module", "user-auth").unwrap().path, renamed);
+
+        // Replace in project: asks first; a file not open is written, an open one changes in its tab only.
+        let (r1, r2) = (root.join("mwp/content/r1.md"), root.join("mwp/content/r2.md"));
+        fs::write(&r1, "swap one\n").unwrap();
+        fs::write(&r2, "swap two\r\n").unwrap();
+        h.state_mut().reload();
+        let ctx = h.ctx.clone();
+        h.state_mut().apply(&ctx, Action::Open(r2.clone()));
+        {
+            let s = h.state_mut();
+            (s.search.query, s.search.replace, s.show_problems, s.show_search) = ("swap".into(), "trade".into(), true, true);
+        }
+        h.run_steps(3);
+        h.get_by_label("Replace all…").click();
+        h.run_steps(30);
+        h.get_by_label("Replace 2 matches in 2 files?");
+        h.get_by_label("Replace").click();
+        h.run_steps(3);
+        assert_eq!(fs::read_to_string(&r1).unwrap(), "trade one\n");
+        assert_eq!(fs::read_to_string(&r2).unwrap(), "swap two\r\n", "the open file is not written");
+        let tab = h.state().tabs.iter().find(|t| t.path == r2).unwrap();
+        assert!(tab.text == "trade two\n" && tab.dirty());
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        // Saved from the tab, the file keeps its CRLF.
+        let i = h.state().tabs.iter().position(|t| t.path == r2).unwrap();
+        assert!(h.state_mut().save_tab(i));
+        assert_eq!(fs::read_to_string(&r2).unwrap(), "trade two\r\n");
+        h.state_mut().show_problems = false;
+
+        // Ctrl+P: type part of a name, Enter opens the first match.
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::P]);
+        h.run_steps(30);
+        h.get_by_role(Role::TextInput).type_text("r1");
+        h.run_steps(3);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert!(h.state().dialog.is_none());
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(r1.clone()));
 
         // Help > About: the art and both versions.
         h.get_by_label("Help").click();

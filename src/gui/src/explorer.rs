@@ -99,6 +99,20 @@ pub fn drop_target(ui: &egui::Ui, header: &egui::Response, dir: &Path, cmd: &mut
     }
 }
 
+/// Go to file: the files whose ID, title or file name hold `query` (any case), those that start
+/// with it first, at most 50. An empty query lists the files in explorer order.
+pub fn quick_matches<'a>(tree: &'a [(&'static str, MaterialIcon, Vec<Entry>)], query: &str) -> Vec<&'a Entry> {
+    let q = query.trim().to_lowercase();
+    let mut found: Vec<(bool, &Entry)> = tree.iter().flat_map(|s| &s.2).filter_map(|e| {
+        let name = folder_name(&e.path).to_lowercase();
+        let (id, title) = (e.id.to_lowercase(), e.title.to_lowercase());
+        let starts = id.starts_with(&q) || name.starts_with(&q);
+        (starts || title.contains(&q) || name.contains(&q) || id.contains(&q)).then_some((!starts, e))
+    }).collect();
+    found.sort_by_key(|f| f.0); // stable: explorer order inside each group
+    found.into_iter().take(50).map(|f| f.1).collect()
+}
+
 /// Lets a file or folder of Modules or Content be dragged onto a folder.
 pub fn drag_source(r: &egui::Response, path: &Path) -> egui::Response {
     let r = r.interact(egui::Sense::drag());

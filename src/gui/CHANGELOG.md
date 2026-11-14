@@ -7,6 +7,8 @@ What changed in each version of the desktop editor. The plan for the next one is
 - **Help > About:** the project art, the versions of the GUI and of the core, the description and the license.
 - **Conflicts with the disk:** **Show changes** in the conflict bar lists only the lines that differ, marked `-` (only in your edits) and `+` (only on disk).
 - **Deleted files:** a file deleted on disk gets a bar with **Save again** and **Close tab**; Ctrl+S no longer brings it back by itself.
+- **File > Go to file** (Ctrl+P): find a file by name, ID or title as you type.
+- **Replace in project:** Replace all in the Search tab, after asking; files open in a tab change there and stay unsaved, the others are written.
 - **Board filters** are remembered per project, with the open tabs. A module, agent or size the project no longer has is dropped.
 
 ## 0.1.1 (2026-11-13)
