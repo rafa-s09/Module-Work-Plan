@@ -19,6 +19,8 @@ rfd = "0.17.2"
 egui_commonmark = { version = "0.26", default-features = false, features = ["pulldown_cmark"] }
 # Icon font (Material Symbols, outlined); egui's own fonts have few icons.
 egui_material_icons = { version = "0.9", default-features = false, features = ["outline"] }
+# Language files (lang/*.json) are edited by hand: a real JSON parser gives clear errors.
+serde_json = "1"
 
 [build-dependencies]
 # Embeds assets/icone/icon.ico in the Windows exe (build.rs).

@@ -19,8 +19,8 @@ pub const RELEASE: [(&str, &str); 3] = [("open", "Back to open"), ("blocked", "B
 pub fn task_status_items(ui: &mut egui::Ui, id: &str, status: &str, cmd: &mut Option<TaskCmd>) {
     for (s, label) in RELEASE.into_iter().filter(|r| r.0 != status) {
         let (icon, color) = status_icon(ui, s);
-        let r = ui.button((icon.rich_text().color(color), label));
-        if r.on_hover_text("Frees the task's claim and module locks").clicked() {
+        let r = ui.button((icon.rich_text().color(color), tr(label)));
+        if r.on_hover_text(tr("Frees the task's claim and module locks")).clicked() {
             *cmd = Some(TaskCmd::Release(id.to_string(), s));
             ui.close();
         }
@@ -33,13 +33,13 @@ pub fn task_buttons(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     if id.is_empty() || status == "done" {
         return;
     }
-    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, "Close")).on_hover_text("Set done and move to tasks/done/; ## Closure must be filled").clicked() {
+    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, tr("Close"))).on_hover_text(tr("Set done and move to tasks/done/; ## Closure must be filled")).clicked() {
         *cmd = Some(TaskCmd::Close(id.to_string()));
     }
-    ui.menu_button(ic(ICON_SWAP_HORIZ, "Status"), |ui| task_status_items(ui, id, status, cmd));
+    ui.menu_button(ic(ICON_SWAP_HORIZ, tr("Status")), |ui| task_status_items(ui, id, status, cmd));
     if status != "in_progress" {
-        let start = egui::Button::new(ic(ICON_PLAY_ARROW, "Start")).fill(ui.visuals().selection.bg_fill);
-        if ui.add(start).on_hover_text("Claim the task for an agent and lock its modules").clicked() {
+        let start = egui::Button::new(ic(ICON_PLAY_ARROW, tr("Start"))).fill(ui.visuals().selection.bg_fill);
+        if ui.add(start).on_hover_text(tr("Claim the task for an agent and lock its modules")).clicked() {
             *cmd = Some(TaskCmd::Start(id.to_string()));
         }
     }
@@ -51,11 +51,11 @@ pub fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     if id.is_empty() || status == "done" {
         return;
     }
-    if status != "in_progress" && ui.button(ic(ICON_PLAY_ARROW, "Start…")).clicked() {
+    if status != "in_progress" && ui.button(ic(ICON_PLAY_ARROW, tr("Start…"))).clicked() {
         *cmd = Some(TaskCmd::Start(id.to_string()));
         ui.close();
     }
-    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, "Close")).clicked() {
+    if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, tr("Close"))).clicked() {
         *cmd = Some(TaskCmd::Close(id.to_string()));
         ui.close();
     }
@@ -68,11 +68,11 @@ pub fn adr_buttons(ui: &mut egui::Ui, adr: &Doc, decide: &mut Option<(String, &'
     if adr.get("status") != "proposed" {
         return;
     }
-    let accept = egui::Button::new(ic(ICON_CHECK_CIRCLE, "Accept")).fill(ui.visuals().selection.bg_fill);
-    if ui.add(accept).on_hover_text("Set status: accepted. The decision is in force from now on").clicked() {
+    let accept = egui::Button::new(ic(ICON_CHECK_CIRCLE, tr("Accept"))).fill(ui.visuals().selection.bg_fill);
+    if ui.add(accept).on_hover_text(tr("Set status: accepted. The decision is in force from now on")).clicked() {
         *decide = Some((adr.id().to_string(), "accepted"));
     }
-    if ui.button(ic(ICON_CANCEL, "Reject")).on_hover_text("Set status: rejected").clicked() {
+    if ui.button(ic(ICON_CANCEL, tr("Reject"))).on_hover_text(tr("Set status: rejected")).clicked() {
         *decide = Some((adr.id().to_string(), "rejected"));
     }
 }
@@ -81,15 +81,15 @@ pub fn adr_buttons(ui: &mut egui::Ui, adr: &Doc, decide: &mut Option<(String, &'
 /// with a token estimate and the cited IDs that do not exist. A file opens on click.
 pub fn context_button(ui: &mut egui::Ui, p: &Project, t: &Doc, ask: &mut Asks) {
     let c = ops::context(p, t);
-    let label = if c.missing.is_empty() { ic(ICON_LIBRARY_BOOKS, "Context") } else { ic(ICON_WARNING, "Context") };
+    let label = if c.missing.is_empty() { ic(ICON_LIBRARY_BOOKS, tr("Context")) } else { ic(ICON_WARNING, tr("Context")) };
     let r = ui.menu_button(label, |ui| {
-        ui.strong(format!("What an agent loads for {}", t.id()));
-        ui.weak("Like mwp context: the constitution, the task, then what its front matter cites.");
+        ui.strong(trf("What an agent loads for {id}", &[("id", t.id())]));
+        ui.weak(tr("Like mwp context: the constitution, the task, then what its front matter cites."));
         ui.separator();
         egui::Grid::new(("context", t.id())).num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
             for (why, path, tokens) in &c.files {
                 let (icon, color) = file_icon(ui, p, path);
-                if ui.selectable_label(false, (icon.rich_text().color(color), p.rel(path))).on_hover_text("Open").clicked() {
+                if ui.selectable_label(false, (icon.rich_text().color(color), p.rel(path))).on_hover_text(tr("Open file")).clicked() {
                     ask.action = Some(Action::Open(path.clone()));
                     ui.close();
                 }
@@ -97,16 +97,16 @@ pub fn context_button(ui: &mut egui::Ui, p: &Project, t: &Doc, ask: &mut Asks) {
                 ui.label(RichText::new(tokens.to_string()).monospace());
                 ui.end_row();
             }
-            ui.strong("Total");
-            ui.weak("tokens (estimate)");
+            ui.strong(tr("Total"));
+            ui.weak(tr("tokens (estimate)"));
             ui.strong(RichText::new(c.tokens().to_string()).monospace());
             ui.end_row();
         });
         for m in &c.missing {
-            ui.colored_label(ui.visuals().error_fg_color, format!("{} Missing: {m}", ICON_ERROR.codepoint));
+            ui.colored_label(ui.visuals().error_fg_color, format!("{} {}", ICON_ERROR.codepoint, trf("Missing: {item}", &[("item", m)])));
         }
     });
-    r.response.on_hover_text(if c.missing.is_empty() { "What an agent loads for this task" } else { "The task cites IDs that do not exist" });
+    r.response.on_hover_text(tr(if c.missing.is_empty() { "What an agent loads for this task" } else { "The task cites IDs that do not exist" }));
 }
 
 /// A task card: ID, size, title, then its modules, agent and work codes. The whole card is clickable.
@@ -207,7 +207,7 @@ impl BoardFilter {
     fn show(&mut self, ui: &mut egui::Ui, p: &Project) {
         ui.horizontal(|ui| {
             ui.label(ICON_FILTER_LIST.rich_text().color(ui.visuals().weak_text_color()));
-            ui.add(egui::TextEdit::singleline(&mut self.text).hint_text("Title, ID or work code").desired_width(220.0));
+            ui.add(egui::TextEdit::singleline(&mut self.text).hint_text(tr("Title, ID or work code")).desired_width(220.0));
             let mut modules: Vec<String> = p.of_kind("module").map(|m| m.id().to_string()).collect();
             modules.sort();
             let mut agents: Vec<String> = p.of_kind("task").map(|t| t.get("agent").to_string()).filter(|a| !a.is_empty()).collect();
@@ -215,9 +215,9 @@ impl BoardFilter {
             agents.dedup();
             let sizes: Vec<String> = SIZES.iter().map(|s| s.0.to_string()).collect();
             for (value, all, options) in [(&mut self.module, "All modules", modules), (&mut self.agent, "All agents", agents), (&mut self.size, "All sizes", sizes)] {
-                let shown = if value.is_empty() { all.to_string() } else { value.clone() };
+                let shown = if value.is_empty() { tr(all).to_string() } else { value.clone() };
                 let r = egui::ComboBox::from_id_salt(all).selected_text(&shown).show_ui(ui, |ui| {
-                    ui.selectable_value(value, String::new(), all);
+                    ui.selectable_value(value, String::new(), tr(all));
                     for o in options {
                         ui.selectable_value(value, o.clone(), o);
                     }
@@ -225,7 +225,7 @@ impl BoardFilter {
                 // Named for screen readers by what it shows ("All modules", or the module).
                 r.response.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::ComboBox, true, &shown));
             }
-            if self.active() && ui.button(ic(ICON_CLOSE, "Clear")).clicked() {
+            if self.active() && ui.button(ic(ICON_CLOSE, tr("Clear"))).clicked() {
                 *self = BoardFilter::default();
             }
         });
@@ -237,10 +237,10 @@ impl BoardFilter {
 pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, filter: &mut BoardFilter, ask: &mut Asks) {
     ui.horizontal(|ui| {
         ui.label(ICON_VIEW_KANBAN.rich_text().size(24.0).color(ui.visuals().hyperlink_color));
-        ui.heading("Board");
+        ui.heading(tr("Board"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ask.new_task |= ui.add(egui::Button::new(ic(ICON_ADD_TASK, "New task")).fill(ui.visuals().selection.bg_fill)).clicked();
-            ui.checkbox(show_done, "Show done");
+            ask.new_task |= ui.add(egui::Button::new(ic(ICON_ADD_TASK, tr("New task"))).fill(ui.visuals().selection.bg_fill)).clicked();
+            ui.checkbox(show_done, tr("Show done"));
         });
     });
     filter.show(ui, &v.project);
@@ -255,7 +255,7 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, filter: &mut Boa
             ui.horizontal(|ui| {
                 let (icon, color) = status_icon(ui, status);
                 ui.label(icon.rich_text().color(color));
-                ui.strong(*label);
+                ui.strong(tr(label));
                 ui.weak(tasks.len().to_string());
             });
             ui.separator();
@@ -272,12 +272,12 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, filter: &mut Boa
                         dropped = Some(t);
                     }
                     r.context_menu(|ui| {
-                        if ui.button(ic(ICON_EDIT, "Open")).clicked() {
+                        if ui.button(ic(ICON_EDIT, tr("Open task"))).clicked() {
                             ask.action = Some(Action::Open(t.path.clone()));
                             ui.close();
                         }
                         task_menu(ui, t, &mut ask.task_cmd);
-                        if ops::deletable(&v.project, &t.path) && ui.button(ic(ICON_DELETE, "Delete…")).clicked() {
+                        if ops::deletable(&v.project, &t.path) && ui.button(ic(ICON_DELETE, tr("Delete…"))).clicked() {
                             ask.ask_delete = Some(t.path.clone());
                             ui.close();
                         }
@@ -314,7 +314,7 @@ impl App {
         let Some((path, modules)) = self.view.as_ref().ok().and_then(|v| v.project.by_id("task", id)).map(|t| (t.path.clone(), t.list("modules"))) else { return };
         let notice = |title: String, text: String| Some(Dialog::Notice { title, text });
         if self.tabs.iter().any(|e| e.path == path && e.dirty()) {
-            self.dialog = notice(format!("Save {id} first"), "The task has unsaved changes. Save them before changing its status.".into());
+            self.dialog = notice(trf("Save {id} first", &[("id", id)]), tr("The task has unsaved changes. Save them before changing its status.").into());
             return;
         }
         let project = Project::open(&self.root);
@@ -334,15 +334,15 @@ impl App {
                         }
                     }
                     if !report.errors.is_empty() {
-                        self.message = Some(format!("{id} closed; lint found {} error(s)", report.errors.len()));
+                        self.message = Some(trf("{id} closed; lint found {n} error(s)", &[("id", &id), ("n", &report.errors.len().to_string())]));
                     }
                     self.reload();
                 }
-                Err(e) => self.dialog = notice(format!("Cannot close {id}"), e),
+                Err(e) => self.dialog = notice(trf("Cannot close {id}", &[("id", &id)]), e),
             },
             TaskCmd::Release(id, status) => match project.and_then(|p| ops::task_release(&p, &id, status)) {
                 Ok(_) => self.reload(),
-                Err(e) => self.dialog = notice(format!("Cannot change {id}"), e),
+                Err(e) => self.dialog = notice(trf("Cannot change {id}", &[("id", &id)]), e),
             },
         }
     }

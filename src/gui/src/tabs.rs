@@ -37,7 +37,7 @@ pub fn tab(ui: &mut egui::Ui, active: bool, (icon, tint): (MaterialIcon, Color32
     }
     let shown = (active || hovered) && !(dirty && !hovered);
     let close = egui::Button::new(ICON_CLOSE.rich_text().size(16.0).color(if shown { text } else { Color32::TRANSPARENT })).frame(false);
-    let close = ui.put(close_rect, close).on_hover_text("Close").clicked();
+    let close = ui.put(close_rect, close).on_hover_text(tr("Close")).clicked();
     if r.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
@@ -74,25 +74,25 @@ pub fn tab_strip(ui: &mut egui::Ui, v: &View, tabs: &[Editor], active: Option<us
                         ask.shown_tab = Some(t.path.clone());
                     }
                     r.context_menu(|ui| {
-                        if ui.add_enabled(i > 0, egui::Button::new(ic(ICON_ARROW_BACK, "Move left"))).clicked() {
+                        if ui.add_enabled(i > 0, egui::Button::new(ic(ICON_ARROW_BACK, tr("Move left")))).clicked() {
                             ask.action = Some(Action::MoveTab(i, i - 1));
                             ui.close();
                         }
-                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_ARROW_FORWARD, "Move right"))).clicked() {
+                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_ARROW_FORWARD, tr("Move right")))).clicked() {
                             ask.action = Some(Action::MoveTab(i, i + 1));
                             ui.close();
                         }
                         ui.separator();
-                        let close = egui::Button::new(ic(ICON_CLOSE, "Close")).shortcut_text(ui.ctx().format_shortcut(&CLOSE_TAB));
+                        let close = egui::Button::new(ic(ICON_CLOSE, tr("Close"))).shortcut_text(ui.ctx().format_shortcut(&CLOSE_TAB));
                         if ui.add(close).clicked() {
                             ask.action = Some(Action::CloseTab(i));
                             ui.close();
                         }
-                        if ui.add_enabled(last > 0, egui::Button::new(ic(ICON_TAB_CLOSE, "Close others"))).clicked() {
+                        if ui.add_enabled(last > 0, egui::Button::new(ic(ICON_TAB_CLOSE, tr("Close others")))).clicked() {
                             ask.action = Some(Action::CloseTabs((0..=last).filter(|&j| j != i).collect()));
                             ui.close();
                         }
-                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_TAB_CLOSE_RIGHT, "Close to the right"))).clicked() {
+                        if ui.add_enabled(i < last, egui::Button::new(ic(ICON_TAB_CLOSE_RIGHT, tr("Close to the right")))).clicked() {
                             ask.action = Some(Action::CloseTabs((i + 1..=last).collect()));
                             ui.close();
                         }

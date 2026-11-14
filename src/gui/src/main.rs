@@ -6,6 +6,7 @@ mod board;
 mod dialogs;
 mod editor;
 mod explorer;
+mod i18n;
 mod layout;
 mod search;
 mod tabs;
@@ -14,6 +15,7 @@ use board::*;
 use dialogs::*;
 use editor::{Editor, Mode};
 use explorer::*;
+use i18n::{count, tr, trf};
 use layout::{project_key, rel_to, Layout};
 use search::*;
 use std::collections::BTreeMap;
@@ -148,6 +150,8 @@ struct App {
     show_search: bool,
     search: Search,
     title: String,
+    /// The language of the GUI (see `i18n`).
+    lang: String,
     /// The tabs each project had open, kept between runs (see `layout`).
     saved_tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
     /// The board filters of each project, kept between runs.
@@ -175,6 +179,7 @@ impl App {
             show_search: false,
             search: Search::default(),
             title: String::new(),
+            lang: "en".into(),
             saved_tabs: BTreeMap::new(),
             saved_filters: BTreeMap::new(),
         };
@@ -202,11 +207,17 @@ impl App {
             s.spacing.item_spacing = egui::vec2(8.0, 5.0);
             s.spacing.button_padding = egui::vec2(8.0, 3.0);
         });
+        i18n::ensure_folder();
         let mut app = App::new(root);
         if let Some(text) = cc.storage.and_then(|s| s.get_string(layout::KEY)) {
             let l = Layout::parse(&text);
             (app.mode, app.show_done, app.show_problems) = (l.mode, l.show_done, l.show_problems);
             (app.saved_tabs, app.saved_filters) = (l.tabs, l.filters);
+            // A language file that no longer reads leaves the GUI in English, and says why.
+            match i18n::set(&l.lang) {
+                Ok(()) => app.lang = l.lang,
+                Err(e) => app.message = Some(e),
+            }
             app.restore_project();
         }
         app
@@ -369,11 +380,11 @@ impl App {
             Ok(lines) => {
                 let skipped: Vec<&str> = lines.iter().filter_map(|l| l.strip_prefix("skip ")).collect();
                 if !skipped.is_empty() {
-                    let text = format!("Existing files are never replaced. Not added:\n{}", skipped.join("\n"));
-                    self.dialog = Some(Dialog::Notice { title: format!("{} file(s) not added", skipped.len()), text });
+                    let text = format!("{}\n{}", tr("Existing files are never replaced. Not added:"), skipped.join("\n"));
+                    self.dialog = Some(Dialog::Notice { title: trf("{n} file(s) not added", &[("n", &skipped.len().to_string())]), text });
                 }
             }
-            Err(e) => self.dialog = Some(Dialog::Notice { title: "Files not added".into(), text: e }),
+            Err(e) => self.dialog = Some(Dialog::Notice { title: tr("Files not added").into(), text: e }),
         }
         self.reload();
     }
@@ -383,7 +394,7 @@ impl eframe::App for App {
     /// Called by eframe now and then and on exit; the window and panels it keeps itself.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.keep_project();
-        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, tabs: self.saved_tabs.clone(), filters: self.saved_filters.clone() };
+        let l = Layout { mode: self.mode, show_done: self.show_done, show_problems: self.show_problems, lang: self.lang.clone(), tabs: self.saved_tabs.clone(), filters: self.saved_filters.clone() };
         storage.set_string(layout::KEY, l.text());
     }
 
@@ -468,81 +479,86 @@ impl eframe::App for App {
 
         egui::Panel::top("menu").show(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button(ic(ICON_CREATE_NEW_FOLDER, "New project…")).clicked() {
+                ui.menu_button(tr("File"), |ui| {
+                    if ui.button(ic(ICON_CREATE_NEW_FOLDER, tr("New project…"))).clicked() {
                         self.dialog = Some(self.new_project_dialog());
                     }
-                    if ui.button(ic(ICON_FOLDER_OPEN, "Open project…")).clicked() {
+                    if ui.button(ic(ICON_FOLDER_OPEN, tr("Open project…"))).clicked() {
                         self.dialog = Some(Dialog::Open { dir: self.root.display().to_string(), error: String::new() });
                     }
-                    let go = egui::Button::new(ic(ICON_MANAGE_SEARCH, "Go to file…")).shortcut_text(ctx.format_shortcut(&GO_TO_FILE));
+                    let go = egui::Button::new(ic(ICON_MANAGE_SEARCH, tr("Go to file…"))).shortcut_text(ctx.format_shortcut(&GO_TO_FILE));
                     if ui.add_enabled(self.view.is_ok(), go).clicked() {
                         self.dialog = Some(Dialog::QuickOpen { query: String::new(), selected: 0 });
                     }
                     ui.separator();
                     let project = self.view.is_ok();
-                    ask.new_task = ui.add_enabled(project, egui::Button::new(ic(ICON_ADD_TASK, "New task…"))).clicked();
-                    ask.new_module = ui.add_enabled(project, egui::Button::new(ic(ICON_EXTENSION, "New module…"))).clicked();
-                    ask.new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, "New SPEC…"))).clicked();
-                    ask.new_adr = ui.add_enabled(project, egui::Button::new(ic(ICON_GAVEL, "New ADR…"))).clicked();
+                    ask.new_task = ui.add_enabled(project, egui::Button::new(ic(ICON_ADD_TASK, tr("New task…")))).clicked();
+                    ask.new_module = ui.add_enabled(project, egui::Button::new(ic(ICON_EXTENSION, tr("New module…")))).clicked();
+                    ask.new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, tr("New SPEC…")))).clicked();
+                    ask.new_adr = ui.add_enabled(project, egui::Button::new(ic(ICON_GAVEL, tr("New ADR…")))).clicked();
                     ui.separator();
-                    ask.agents = ui.add_enabled(project, egui::Button::new(ic(ICON_SMART_TOY, "Project agents…"))).clicked();
+                    ask.agents = ui.add_enabled(project, egui::Button::new(ic(ICON_SMART_TOY, tr("Project agents…")))).clicked();
                     ui.separator();
                     let dirty = self.current().is_some_and(Editor::dirty);
-                    save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, "Save")).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
+                    save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, tr("Save"))).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
                     let any = self.tabs.iter().any(Editor::dirty);
-                    save_all = ui.add_enabled(any, egui::Button::new(ic(ICON_SAVE_AS, "Save all")).shortcut_text(ctx.format_shortcut(&SAVE_ALL))).clicked();
-                    if ui.add_enabled(self.active.is_some(), egui::Button::new(ic(ICON_CLOSE, "Close file")).shortcut_text(ctx.format_shortcut(&CLOSE_TAB))).clicked() {
+                    save_all = ui.add_enabled(any, egui::Button::new(ic(ICON_SAVE_AS, tr("Save all"))).shortcut_text(ctx.format_shortcut(&SAVE_ALL))).clicked();
+                    if ui.add_enabled(self.active.is_some(), egui::Button::new(ic(ICON_CLOSE, tr("Close file"))).shortcut_text(ctx.format_shortcut(&CLOSE_TAB))).clicked() {
                         ask.action = self.active.map(Action::CloseTab);
                     }
-                    if ui.add_enabled(deletable.is_some(), egui::Button::new(ic(ICON_DELETE, "Delete file…"))).on_disabled_hover_text("Only modules, specs and open tasks can be deleted").clicked() {
+                    if ui.add_enabled(deletable.is_some(), egui::Button::new(ic(ICON_DELETE, tr("Delete file…")))).on_disabled_hover_text(tr("Only modules, specs and open tasks can be deleted")).clicked() {
                         ask.ask_delete = deletable.clone();
                     }
                     ui.separator();
-                    reload = ui.button(ic(ICON_REFRESH, "Reload")).clicked();
+                    reload = ui.button(ic(ICON_REFRESH, tr("Reload"))).clicked();
                     ui.separator();
-                    if ui.button(ic(ICON_LOGOUT, "Quit")).clicked() {
+                    if ui.button(ic(ICON_LOGOUT, tr("Quit"))).clicked() {
                         ask.action = Some(Action::Quit);
                     }
                 });
-                ui.menu_button("Edit", |ui| {
+                ui.menu_button(tr("Edit"), |ui| {
                     let on = self.active.is_some() && self.mode != Mode::Preview;
                     for (i, (label, icon, cmd, sc)) in EDIT_MENU.iter().enumerate() {
                         if i == 2 || i == 5 {
                             ui.separator();
                         }
-                        if ui.add_enabled(on, egui::Button::new(ic(*icon, label)).shortcut_text(ctx.format_shortcut(sc))).clicked() {
+                        if ui.add_enabled(on, egui::Button::new(ic(*icon, tr(label))).shortcut_text(ctx.format_shortcut(sc))).clicked() {
                             self.edit_cmd = Some((*cmd, 1));
                         }
                     }
                     ui.separator();
                     for (label, icon, sc, replace) in [("Find…", ICON_SEARCH, FIND, false), ("Replace…", ICON_FIND_REPLACE, REPLACE, true)] {
-                        let item = egui::Button::new(ic(icon, label)).shortcut_text(ctx.format_shortcut(&sc));
+                        let item = egui::Button::new(ic(icon, tr(label))).shortcut_text(ctx.format_shortcut(&sc));
                         if ui.add_enabled(self.active.is_some(), item).clicked() {
                             if let Some(i) = self.active {
                                 self.tabs[i].open_find(replace);
                             }
                         }
                     }
-                    let search = egui::Button::new(ic(ICON_MANAGE_SEARCH, "Find in project…")).shortcut_text(ctx.format_shortcut(&SEARCH));
+                    let search = egui::Button::new(ic(ICON_MANAGE_SEARCH, tr("Find in project…"))).shortcut_text(ctx.format_shortcut(&SEARCH));
                     if ui.add_enabled(self.view.is_ok(), search).clicked() {
                         self.open_search();
                     }
                 });
-                ui.menu_button("View", |ui| {
-                    if ui.button(ic(ICON_VIEW_KANBAN, "Board")).clicked() {
+                ui.menu_button(tr("View"), |ui| {
+                    if ui.button(ic(ICON_VIEW_KANBAN, tr("Board"))).clicked() {
                         ask.action = Some(Action::Board);
                     }
                     ui.separator();
                     for (m, label) in [(Mode::Edit, "Source only"), (Mode::Split, "Source and preview"), (Mode::Preview, "Preview only")] {
-                        ui.radio_value(&mut self.mode, m, label);
+                        ui.radio_value(&mut self.mode, m, tr(label));
                     }
                     ui.separator();
-                    ui.checkbox(&mut self.show_done, "Done tasks on the board");
-                    ui.checkbox(&mut self.show_problems, "Bottom panel (Problems, Search)");
+                    ui.checkbox(&mut self.show_done, tr("Done tasks on the board"));
+                    ui.checkbox(&mut self.show_problems, tr("Bottom panel (Problems, Search)"));
                 });
-                ui.menu_button("Help", |ui| {
-                    if ui.button(ic(ICON_INFO, "About MWP…")).clicked() {
+                ui.menu_button(tr("Settings"), |ui| {
+                    if ui.button(ic(ICON_SETTINGS, tr("Preferences…"))).clicked() {
+                        self.dialog = Some(Dialog::Settings { lang: self.lang.clone(), langs: i18n::available(), error: String::new() });
+                    }
+                });
+                ui.menu_button(tr("Help"), |ui| {
+                    if ui.button(ic(ICON_INFO, tr("About MWP…"))).clicked() {
                         self.dialog = Some(App::about_dialog(&ctx));
                     }
                 });
@@ -557,12 +573,12 @@ impl eframe::App for App {
                     let (ec, wc) = (tint(e, ui.visuals().error_fg_color), tint(w, ui.visuals().warn_fg_color));
                     let problems = (ICON_ERROR.rich_text().color(ec), RichText::new(e.to_string()).color(ec), ICON_WARNING.rich_text().color(wc), RichText::new(w.to_string()).color(wc));
                     let on = self.show_problems && !self.show_search;
-                    if ui.selectable_label(on, problems).on_hover_text("Errors and warnings from mwp lint").clicked() {
+                    if ui.selectable_label(on, problems).on_hover_text(tr("Errors and warnings from mwp lint")).clicked() {
                         (self.show_problems, self.show_search) = (!on, false);
                     }
                     ui.separator();
                     ui.label(ICON_SMART_TOY.rich_text());
-                    ui.label(format!("{} in progress", v.claims.len()));
+                    ui.label(trf("{n} in progress", &[("n", &v.claims.len().to_string())]));
                     ui.separator();
                 }
                 match &self.message {
@@ -580,11 +596,11 @@ impl eframe::App for App {
                     ui.vertical_centered(|ui| {
                         ui.add_space(80.0);
                         ui.label(ICON_HUB.rich_text().size(56.0).color(ui.visuals().weak_text_color()));
-                        ui.heading("No MWP project open");
+                        ui.heading(tr("No MWP project open"));
                         ui.colored_label(ui.visuals().error_fg_color, e);
                         ui.add_space(12.0);
-                        new_dialog = ui.button(ic(ICON_CREATE_NEW_FOLDER, "New project…")).clicked();
-                        open_dialog = ui.button(ic(ICON_FOLDER_OPEN, "Open project…")).clicked();
+                        new_dialog = ui.button(ic(ICON_CREATE_NEW_FOLDER, tr("New project…"))).clicked();
+                        open_dialog = ui.button(ic(ICON_FOLDER_OPEN, tr("Open project…"))).clicked();
                         ui.add_space(24.0);
                     });
                     if !self.recent.is_empty() {
@@ -594,7 +610,7 @@ impl eframe::App for App {
                             ui.add_space((ui.available_width() - w) / 2.0);
                             ui.vertical(|ui| {
                                 ui.set_width(w);
-                                section(ui, "Recent", |ui| {
+                                section(ui, tr("Recent"), |ui| {
                                     if let Some(dir) = recent_list(ui, &self.recent) {
                                         ask.action = Some(Action::Project(dir, false));
                                     }
@@ -610,10 +626,10 @@ impl eframe::App for App {
                 if self.show_problems {
                     egui::Panel::bottom("problems").resizable(true).default_size(110.0).show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.show_search, false, RichText::new("Problems").strong());
-                            ui.selectable_value(&mut self.show_search, true, RichText::new("Search").strong());
+                            ui.selectable_value(&mut self.show_search, false, RichText::new(tr("Problems")).strong());
+                            ui.selectable_value(&mut self.show_search, true, RichText::new(tr("Search")).strong());
                             if !self.show_search {
-                                ui.weak(format!("{} errors, {} warnings", v.report.errors.len(), v.report.warnings.len()));
+                                ui.weak(trf("{errors} errors, {warnings} warnings", &[("errors", &v.report.errors.len().to_string()), ("warnings", &v.report.warnings.len().to_string())]));
                             }
                         });
                         if self.show_search {
@@ -630,12 +646,12 @@ impl eframe::App for App {
                                         ask.action = problem_path(&self.root, line).map(Action::Open);
                                     }
                                     if line.starts_with(MAP_STALE) {
-                                        update_map |= ui.small_button(ic(ICON_REFRESH, "Update map.md")).clicked();
+                                        update_map |= ui.small_button(ic(ICON_REFRESH, tr("Update map.md"))).clicked();
                                     }
                                 });
                             }
                             if v.report.errors.is_empty() && v.report.warnings.is_empty() {
-                                ui.weak("No errors or warnings.");
+                                ui.weak(tr("No errors or warnings."));
                             }
                         });
                     });
@@ -662,7 +678,7 @@ impl eframe::App for App {
                                 dim(ui, meta.join("   ·   "));
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if deletable.is_some() && ui.button(ic(ICON_DELETE, "Delete")).on_hover_text("Delete this file").clicked() {
+                                if deletable.is_some() && ui.button(ic(ICON_DELETE, tr("Delete"))).on_hover_text(tr("Delete this file")).clicked() {
                                     ask.ask_delete = deletable.clone();
                                 }
                                 if let Some(t) = doc.filter(|d| d.kind() == "task") {
@@ -674,7 +690,7 @@ impl eframe::App for App {
                                 }
                                 let stale = v.report.errors.iter().any(|e| e.starts_with(MAP_STALE));
                                 if stale && ed.path == v.project.mwp.join("map.md") {
-                                    update_map |= ui.button(ic(ICON_REFRESH, "Update map.md")).on_hover_text("Rebuild the module table from the modules, like mwp remap").clicked();
+                                    update_map |= ui.button(ic(ICON_REFRESH, tr("Update map.md"))).on_hover_text(tr("Rebuild the module table from the modules, like mwp remap")).clicked();
                                 }
                             });
                         });
@@ -714,10 +730,10 @@ impl eframe::App for App {
         if let Some((id, status)) = ask.adr_decide {
             // As for tasks: the step rewrites the file, so unsaved edits come first.
             let dirty = self.view.as_ref().ok().and_then(|v| v.project.by_id("adr", &id)).is_some_and(|a| self.tabs.iter().any(|e| e.path == a.path && e.dirty()));
-            let done = if dirty { Err("The ADR has unsaved changes. Save them before deciding it.".to_string()) } else { Project::open(&self.root).and_then(|p| ops::adr_decide(&p, &id, status)) };
+            let done = if dirty { Err(tr("The ADR has unsaved changes. Save them before deciding it.").to_string()) } else { Project::open(&self.root).and_then(|p| ops::adr_decide(&p, &id, status)) };
             match done {
                 Ok(_) => self.reload(),
-                Err(text) => self.dialog = Some(Dialog::Notice { title: format!("Cannot change {id}"), text }),
+                Err(text) => self.dialog = Some(Dialog::Notice { title: trf("Cannot change {id}", &[("id", &id)]), text }),
             }
         }
         if ask.agents {
@@ -758,7 +774,7 @@ impl eframe::App for App {
         if update_map {
             let map = self.root.join("mwp/map.md");
             if self.tabs.iter().any(|e| e.path == map && e.dirty()) {
-                self.dialog = Some(Dialog::Notice { title: "Save map.md first".into(), text: "map.md has unsaved changes. Save them before it is rebuilt.".into() });
+                self.dialog = Some(Dialog::Notice { title: tr("Save map.md first").into(), text: tr("map.md has unsaved changes. Save them before it is rebuilt.").into() });
             } else {
                 let done = ops::refresh_map(&self.root);
                 self.message = done.starts_with("warning").then_some(done);
@@ -772,7 +788,7 @@ impl eframe::App for App {
             Some(FolderCmd::NewFolder(area, parent)) => self.dialog = Some(Dialog::NewFolder { area, parent, name: String::new(), error: String::new() }),
             Some(FolderCmd::AddFiles(folder)) => {
                 let start = self.root.join("mwp/content").join(&folder);
-                if let Some(files) = rfd::FileDialog::new().set_title("Add to content").set_directory(&start).pick_files() {
+                if let Some(files) = rfd::FileDialog::new().set_title(tr("Add to content")).set_directory(&start).pick_files() {
                     self.add_content(&folder, &files);
                 }
             }
@@ -791,7 +807,7 @@ impl eframe::App for App {
                             self.follow_move(&from, &self.root.join(rel));
                         }
                     }
-                    Err(text) => self.dialog = Some(Dialog::Notice { title: format!("Cannot move {}", folder_name(&from)), text }),
+                    Err(text) => self.dialog = Some(Dialog::Notice { title: trf("Cannot move {name}", &[("name", &folder_name(&from))]), text }),
                 }
                 self.reload();
             }
@@ -823,16 +839,16 @@ impl eframe::App for App {
             let mut choice = None;
             egui::Modal::new(egui::Id::unique("unsaved")).show(&ctx, |ui| {
                 ui.set_width(380.0);
-                ui.heading("Unsaved changes");
+                ui.heading(tr("Unsaved changes"));
                 match names.as_slice() {
-                    [one] => ui.label(format!("Save the changes to {one}?")),
-                    many => ui.label(format!("Save the changes to {} files?\n{}", many.len(), many.join("\n"))),
+                    [one] => ui.label(trf("Save the changes to {name}?", &[("name", one)])),
+                    many => ui.label(format!("{}\n{}", trf("Save the changes to {n} files?", &[("n", &many.len().to_string())]), many.join("\n"))),
                 };
-                ui.weak("Changes you don't save are lost.");
+                ui.weak(tr("Changes you don't save are lost."));
                 ui.separator();
                 right_row(ui, |ui| {
                     for (label, c) in [("Save", "save"), ("Don't save", "discard"), ("Cancel", "cancel")] {
-                        if ui.button(label).clicked() {
+                        if ui.button(tr(label)).clicked() {
                             choice = Some(c);
                         }
                     }
@@ -1509,6 +1525,24 @@ mod tests {
         h.run_steps(3);
         assert!(h.state().dialog.is_none());
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(r1.clone()));
+
+        // Settings > Preferences: pick Portuguese, the menus follow; back to English.
+        h.get_by_label("Settings").click();
+        h.run_steps(3);
+        h.get_by_label_contains("Preferences…").click();
+        h.run_steps(30);
+        h.get_by_role(Role::ComboBox).click();
+        h.run_steps(3);
+        h.get_by_label("Português (Brasil)  (pt-BR)").click();
+        h.run_steps(3);
+        assert_eq!(h.state().lang, "pt-BR");
+        h.get_by_label("Arquivo"); // the File menu, translated
+        h.get_by_label("Fechar").click();
+        h.run_steps(3);
+        i18n::set("en").unwrap();
+        h.state_mut().lang = "en".into();
+        h.run_steps(3);
+        h.get_by_label("File");
 
         // Help > About: the art and both versions.
         h.get_by_label("Help").click();

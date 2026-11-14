@@ -123,24 +123,24 @@ pub fn drag_source(r: &egui::Response, path: &Path) -> egui::Response {
 /// The context menu of the Modules and Content sections and of each folder in them.
 pub fn folder_menu(ui: &mut egui::Ui, area: Area, rel: &str, dir: Option<&Path>, cmd: &mut Option<FolderCmd>) {
     let (icon, label, add) = match area {
-        Area::Modules => (ICON_EXTENSION, "New module here…", FolderCmd::NewModule(rel.to_string())),
-        Area::Content => (ICON_UPLOAD_FILE, "Add files here…", FolderCmd::AddFiles(rel.to_string())),
+        Area::Modules => (ICON_EXTENSION, tr("New module here…"), FolderCmd::NewModule(rel.to_string())),
+        Area::Content => (ICON_UPLOAD_FILE, tr("Add files here…"), FolderCmd::AddFiles(rel.to_string())),
     };
     if ui.button(ic(icon, label)).clicked() {
         *cmd = Some(add);
         ui.close();
     }
-    if ui.button(ic(ICON_CREATE_NEW_FOLDER, "New folder…")).clicked() {
+    if ui.button(ic(ICON_CREATE_NEW_FOLDER, tr("New folder…"))).clicked() {
         *cmd = Some(FolderCmd::NewFolder(area, rel.to_string()));
         ui.close();
     }
     if let Some(dir) = dir {
-        if ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, "Rename…"))).clicked() {
+        if ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, tr("Rename…")))).clicked() {
             *cmd = Some(FolderCmd::Rename(dir.to_path_buf()));
             ui.close();
         }
         let empty = fs::read_dir(dir).is_ok_and(|mut r| r.next().is_none());
-        let remove = ui.add_enabled(empty, egui::Button::new(ic(ICON_DELETE, "Delete folder"))).on_disabled_hover_text("Only an empty folder can be deleted");
+        let remove = ui.add_enabled(empty, egui::Button::new(ic(ICON_DELETE, tr("Delete folder")))).on_disabled_hover_text(tr("Only an empty folder can be deleted"));
         if remove.clicked() {
             *cmd = Some(FolderCmd::Remove(dir.to_path_buf()));
             ui.close();
@@ -152,7 +152,7 @@ pub fn folder_menu(ui: &mut egui::Ui, area: Area, rel: &str, dir: Option<&Path>,
 pub fn flat(ui: &mut egui::Ui, entries: &[Entry], files: &mut dyn FnMut(&mut egui::Ui, &[&Entry])) {
     files(ui, &entries.iter().collect::<Vec<_>>());
     if entries.is_empty() {
-        ui.weak("Empty");
+        ui.weak(tr("Empty"));
     }
 }
 
@@ -170,7 +170,7 @@ pub fn folder_tree(ui: &mut egui::Ui, area: Area, dir: &Path, root: &Path, dirs:
     let here: Vec<&Entry> = entries.iter().filter(|e| e.path.parent() == Some(dir)).copied().collect();
     files(ui, &here);
     if here.is_empty() && subs.is_empty() {
-        ui.weak("Empty");
+        ui.weak(tr("Empty"));
     }
 }
 
@@ -284,7 +284,7 @@ pub fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, o
     let mut title_r = None;
     let header = ui.horizontal(|ui| {
         state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
-        let label = (icon.rich_text().color(ui.visuals().weak_text_color()), RichText::new(title).strong(), RichText::new(count.to_string()).weak());
+        let label = (icon.rich_text().color(ui.visuals().weak_text_color()), RichText::new(tr(title)).strong(), RichText::new(count.to_string()).weak());
         let r = ui.add(egui::Button::new(label).frame(false));
         if r.clicked() {
             state.toggle(ui);
@@ -293,7 +293,7 @@ pub fn group(ui: &mut egui::Ui, icon: MaterialIcon, title: &str, count: usize, o
         if let Some(tip) = add {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0); // clear of the scroll bar
-                plus = ui.add(egui::Button::new(ICON_ADD.rich_text()).frame(false)).on_hover_text(tip).clicked();
+                plus = ui.add(egui::Button::new(ICON_ADD.rich_text()).frame(false)).on_hover_text(tr(tip)).clicked();
             });
         }
     });
@@ -314,7 +314,7 @@ impl App {
             ui.add_space(4.0);
             ui.separator();
             egui::ScrollArea::vertical().id_salt("explorer").auto_shrink([false, false]).show(ui, |ui| {
-                if ui.selectable_label(self.active.is_none(), ic(ICON_VIEW_KANBAN, "Board")).clicked() {
+                if ui.selectable_label(self.active.is_none(), ic(ICON_VIEW_KANBAN, tr("Board"))).clicked() {
                     ask.action = Some(Action::Board);
                 }
                 ui.add_space(4.0);
@@ -327,11 +327,11 @@ impl App {
                         }
                         ui.horizontal(|ui| {
                             ui.label(ICON_LOCK.rich_text().small().weak());
-                            dim(ui, if modules.is_empty() { "no module locked".into() } else { modules.join(", ") });
+                            dim(ui, if modules.is_empty() { tr("no module locked").into() } else { modules.join(", ") });
                         });
                     }
                     if v.claims.is_empty() {
-                        ui.weak("No task in progress.");
+                        ui.weak(tr("No task in progress."));
                     }
                 });
                 let mut files = |ui: &mut egui::Ui, entries: &[&Entry]| {
@@ -359,7 +359,7 @@ impl App {
                                 }
                             }
                             r.context_menu(|ui| {
-                                let open = if external { ic(ICON_OPEN_IN_NEW, "Open with system app") } else { ic(ICON_EDIT, "Open") };
+                                let open = if external { ic(ICON_OPEN_IN_NEW, tr("Open with system app")) } else { ic(ICON_EDIT, tr("Open file")) };
                                 if ui.button(open).clicked() {
                                     if external {
                                         ask.open_error = open_external(&e.path, false).err();
@@ -368,20 +368,20 @@ impl App {
                                     }
                                     ui.close();
                                 }
-                                if ui.button(ic(ICON_FOLDER_OPEN, "Show in folder")).clicked() {
+                                if ui.button(ic(ICON_FOLDER_OPEN, tr("Show in folder"))).clicked() {
                                     ask.open_error = open_external(&e.path, true).err();
                                     ui.close();
                                 }
                                 // Tasks cite resources by path: copy it to paste into a task.
-                                if ui.button(ic(ICON_CONTENT_COPY, "Copy path")).on_hover_text(&rel).clicked() {
+                                if ui.button(ic(ICON_CONTENT_COPY, tr("Copy path"))).on_hover_text(&rel).clicked() {
                                     ui.ctx().copy_text(rel.clone());
                                     ui.close();
                                 }
-                                if movable && ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, "Rename…")).shortcut_text("F2")).clicked() {
+                                if movable && ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, tr("Rename…"))).shortcut_text("F2")).clicked() {
                                     ask.rename = Some(e.path.clone());
                                     ui.close();
                                 }
-                                if ops::deletable(&v.project, &e.path) && ui.button(ic(ICON_DELETE, "Delete…")).clicked() {
+                                if ops::deletable(&v.project, &e.path) && ui.button(ic(ICON_DELETE, tr("Delete…"))).clicked() {
                                     ask.ask_delete = Some(e.path.clone());
                                     ui.close();
                                 }

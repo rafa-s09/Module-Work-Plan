@@ -13,6 +13,8 @@ pub struct Layout {
     pub mode: Mode,
     pub show_done: bool,
     pub show_problems: bool,
+    /// The language of the GUI, as the code of its file (`en`, `pt-BR`).
+    pub lang: String,
     /// By project folder (absolute): the open tab and the tabs, as paths relative to the project.
     pub tabs: BTreeMap<PathBuf, (Option<String>, Vec<String>)>,
     /// By project folder: the board filters (text, module, agent, size).
@@ -21,7 +23,7 @@ pub struct Layout {
 
 impl Default for Layout {
     fn default() -> Layout {
-        Layout { mode: Mode::Split, show_done: false, show_problems: true, tabs: BTreeMap::new(), filters: BTreeMap::new() }
+        Layout { mode: Mode::Split, show_done: false, show_problems: true, lang: "en".into(), tabs: BTreeMap::new(), filters: BTreeMap::new() }
     }
 }
 
@@ -36,6 +38,7 @@ impl Layout {
                 (Some("mode"), Some(m)) => l.mode = MODES.iter().find(|x| x.1 == m).map_or(l.mode, |x| x.0),
                 (Some("show_done"), Some(b)) => l.show_done = b == "1",
                 (Some("show_problems"), Some(b)) => l.show_problems = b != "0",
+                (Some("lang"), Some(code)) if !code.is_empty() => l.lang = code.to_string(),
                 (Some("tabs"), Some(root)) if !root.is_empty() => {
                     let active = f.next().filter(|a| !a.is_empty()).map(str::to_string);
                     l.tabs.insert(PathBuf::from(root), (active, f.filter(|p| !p.is_empty()).map(str::to_string).collect()));
@@ -55,7 +58,7 @@ impl Layout {
 
     pub fn text(&self) -> String {
         let mode = MODES.iter().find(|x| x.0 == self.mode).map_or("split", |x| x.1);
-        let mut out = format!("mode\t{mode}\nshow_done\t{}\nshow_problems\t{}\n", self.show_done as u8, self.show_problems as u8);
+        let mut out = format!("mode\t{mode}\nshow_done\t{}\nshow_problems\t{}\nlang\t{}\n", self.show_done as u8, self.show_problems as u8, self.lang);
         for (root, (active, tabs)) in &self.tabs {
             out += &format!("tabs\t{}\t{}\t{}\n", root.display(), active.as_deref().unwrap_or(""), tabs.join("\t"));
         }

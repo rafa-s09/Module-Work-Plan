@@ -149,27 +149,26 @@ fn snippet(ui: &egui::Ui, h: &Hit) -> egui::text::LayoutJob {
 pub fn search_panel(ui: &mut egui::Ui, v: &View, tabs: &[Editor], loaded: Instant, s: &mut Search, ask: &mut Asks) {
     ui.horizontal(|ui| {
         ui.label(ICON_SEARCH.rich_text().color(ui.visuals().weak_text_color()));
-        let r = ui.add(egui::TextEdit::singleline(&mut s.query).hint_text("Find in project").desired_width(320.0));
+        let r = ui.add(egui::TextEdit::singleline(&mut s.query).hint_text(tr("Find in project")).desired_width(320.0));
         if std::mem::take(&mut s.focus) {
             r.request_focus();
         }
-        ui.toggle_value(&mut s.case, ICON_MATCH_CASE.rich_text()).on_hover_text("Match case");
+        ui.toggle_value(&mut s.case, ICON_MATCH_CASE.rich_text()).on_hover_text(tr("Match case"));
         s.refresh(&v.project.mwp, tabs, loaded);
         let files = s.hits.iter().map(|h| &h.path).collect::<std::collections::BTreeSet<_>>().len();
-        let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
         let count = match s.hits.len() {
             _ if s.query.is_empty() => String::new(),
-            0 => "No results".into(),
-            MAX_HITS => format!("First {MAX_HITS} results in {}", plural(files, "file")),
-            n => format!("{} in {}", plural(n, "result"), plural(files, "file")),
+            0 => tr("No results").into(),
+            MAX_HITS => trf("First {max} results in {files}", &[("max", &MAX_HITS.to_string()), ("files", &count(files, "file", "files"))]),
+            n => trf("{results} in {files}", &[("results", &count(n, "result", "results")), ("files", &count(files, "file", "files"))]),
         };
         ui.weak(count);
     });
     ui.horizontal(|ui| {
         ui.label(ICON_FIND_REPLACE.rich_text().color(ui.visuals().weak_text_color()));
-        ui.add(egui::TextEdit::singleline(&mut s.replace).hint_text("Replace with").desired_width(320.0));
-        let all = egui::Button::new("Replace all…");
-        ask.replace_project |= ui.add_enabled(!s.hits.is_empty(), all).on_hover_text("Asks first, with the number of matches and files").clicked();
+        ui.add(egui::TextEdit::singleline(&mut s.replace).hint_text(tr("Replace with")).desired_width(320.0));
+        let all = egui::Button::new(tr("Replace all…"));
+        ask.replace_project |= ui.add_enabled(!s.hits.is_empty(), all).on_hover_text(tr("Asks first, with the number of matches and files")).clicked();
     });
     egui::ScrollArea::vertical().id_salt("search").auto_shrink([false, false]).show(ui, |ui| {
         let mut last: Option<&Path> = None;

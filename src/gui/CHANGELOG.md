@@ -4,6 +4,7 @@ What changed in each version of the desktop editor. The plan for the next one is
 
 ## 0.1.2 (unreleased)
 
+- **Settings > Preferences** and **languages:** the GUI in English or Brazilian Portuguese, from JSON files in `<config>/mwp-gui/lang/` that anyone can copy and translate for another language.
 - **Help > About:** the project art, the versions of the GUI and of the core, the description and the license.
 - **Conflicts with the disk:** **Show changes** in the conflict bar lists only the lines that differ, marked `-` (only in your edits) and `+` (only on disk).
 - **Deleted files:** a file deleted on disk gets a bar with **Save again** and **Close tab**; Ctrl+S no longer brings it back by itself.

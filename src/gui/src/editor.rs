@@ -4,6 +4,7 @@
 use eframe::egui::{self, text::CCursor, text::LayoutJob, text_selection::CCursorRange, Color32, FontId, RichText, TextFormat};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use egui_material_icons::{icons::*, MaterialIcon};
+use crate::i18n::{count, tr, trf};
 use mwp_core::doc::split_front_matter;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -221,12 +222,12 @@ impl Editor {
         // Writing now would bring back a file someone deleted: only the bar's Save again does that.
         if self.gone || !self.path.exists() {
             self.gone = true;
-            return Err(format!("{} was deleted on disk: save it again or close the tab", self.name()));
+            return Err(trf("{name} was deleted on disk: save it again or close the tab", &[("name", &self.name())]));
         }
         // Read again here: an agent may have written since the last refresh.
         if let Some((disk, _)) = self.read_disk().filter(|(d, _)| *d != self.saved && *d != self.text) {
             self.disk = Some(disk);
-            return Err(format!("{} changed on disk: choose which version to keep", self.name()));
+            return Err(trf("{name} changed on disk: choose which version to keep", &[("name", &self.name())]));
         }
         self.write()
     }
@@ -234,7 +235,7 @@ impl Editor {
     /// Writes the tab to its file, with the file's own line endings.
     fn write(&mut self) -> Result<(), String> {
         let text = if self.crlf { self.text.replace('\n', "\r\n") } else { self.text.clone() };
-        fs::write(&self.path, text).map_err(|e| format!("cannot save {}: {e}", self.path.display()))?;
+        fs::write(&self.path, text).map_err(|e| trf("cannot save {path}: {error}", &[("path", &self.path.display().to_string()), ("error", &e.to_string())]))?;
         (self.saved, self.disk) = (self.text.clone(), None);
         Ok(())
     }
@@ -242,7 +243,7 @@ impl Editor {
     /// Save again: writes a file that was deleted on disk back from the tab, its folder too.
     pub fn recreate(&mut self) -> Result<(), String> {
         if let Some(dir) = self.path.parent() {
-            fs::create_dir_all(dir).map_err(|e| format!("cannot save {}: {e}", self.path.display()))?;
+            fs::create_dir_all(dir).map_err(|e| trf("cannot save {path}: {error}", &[("path", &self.path.display().to_string()), ("error", &e.to_string())]))?;
         }
         self.write()?;
         self.gone = false;
@@ -429,14 +430,14 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode, find_id: FindId
                     ui.separator();
                 }
                 let button = egui::Button::new(icon.rich_text().size(18.0)).frame(false).min_size(egui::vec2(26.0, 24.0));
-                if ui.add(button).on_hover_text(tip).clicked() {
+                if ui.add(button).on_hover_text(tr(tip)).clicked() {
                     change = Some(f(ed));
                 }
             }
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             for (m, icon, label) in [(Mode::Preview, ICON_VISIBILITY, "Preview"), (Mode::Split, ICON_VERTICAL_SPLIT, "Split"), (Mode::Edit, ICON_CODE, "Source")] {
-                ui.selectable_value(mode, m, format!("{} {label}", icon.codepoint));
+                ui.selectable_value(mode, m, format!("{} {}", icon.codepoint, tr(label)));
             }
         });
     });
@@ -455,7 +456,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, mode: &mut Mode, find_id: FindId
         let before: String = ed.text.chars().take(a).collect();
         let line = before.matches('\n').count() + 1;
         let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
-        format!("Ln {line}, Col {col}   ·   {} words   ·   {}   ·   Markdown", ed.text.split_whitespace().count(), if ed.crlf { "CRLF" } else { "LF" })
+        trf("Ln {line}, Col {col}   ·   {words} words   ·   {eol}   ·   Markdown", &[("line", &line.to_string()), ("col", &col.to_string()), ("words", &ed.text.split_whitespace().count().to_string()), ("eol", if ed.crlf { "CRLF" } else { "LF" })])
     };
     // The views get the height minus one status row, so the scrolled text never runs under it.
     let id = ed.id();
@@ -503,11 +504,11 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
     let arrow = |icon: MaterialIcon| egui::Button::new(icon.rich_text()).frame(false);
     ui.horizontal(|ui| {
         let chevron = if f.replace.is_some() { ICON_EXPAND_MORE } else { ICON_CHEVRON_RIGHT };
-        if ui.add(arrow(chevron)).on_hover_text("Replace (Ctrl+H)").clicked() {
+        if ui.add(arrow(chevron)).on_hover_text(tr("Replace (Ctrl+H)")).clicked() {
             f.replace = if f.replace.is_some() { None } else { Some(String::new()) };
         }
         ui.label(ICON_SEARCH.rich_text().size(18.0).color(ui.visuals().weak_text_color()));
-        let r = ui.add(egui::TextEdit::singleline(&mut f.query).id(field_id).hint_text("Find").desired_width(260.0));
+        let r = ui.add(egui::TextEdit::singleline(&mut f.query).id(field_id).hint_text(tr("Find")).desired_width(260.0));
         if std::mem::take(&mut f.focus) {
             r.request_focus();
         }
@@ -520,28 +521,28 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
         if (r.has_focus() || r.lost_focus()) && esc {
             close = true;
         }
-        ui.toggle_value(&mut f.case, ICON_MATCH_CASE.rich_text()).on_hover_text("Match case");
+        ui.toggle_value(&mut f.case, ICON_MATCH_CASE.rich_text()).on_hover_text(tr("Match case"));
         let count = match (m.len(), here) {
             (0, _) if f.query.is_empty() => String::new(),
-            (0, _) => "No results".into(),
-            (n, Some(i)) => format!("{} of {n}", i + 1),
-            (n, None) => format!("{n} found"),
+            (0, _) => tr("No results").into(),
+            (n, Some(i)) => trf("{i} of {n}", &[("i", &(i + 1).to_string()), ("n", &n.to_string())]),
+            (n, None) => trf("{n} found", &[("n", &n.to_string())]),
         };
         ui.label(egui::RichText::new(count).color(if m.is_empty() && !f.query.is_empty() { ui.visuals().error_fg_color } else { ui.visuals().weak_text_color() }));
-        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_UPWARD)).on_hover_text("Previous match (Shift+Enter, Shift+F3)").clicked() {
+        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_UPWARD)).on_hover_text(tr("Previous match (Shift+Enter, Shift+F3)")).clicked() {
             step = Some(false);
         }
-        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_DOWNWARD)).on_hover_text("Next match (Enter, F3)").clicked() {
+        if ui.add_enabled(!m.is_empty(), arrow(ICON_ARROW_DOWNWARD)).on_hover_text(tr("Next match (Enter, F3)")).clicked() {
             step = Some(true);
         }
-        close |= ui.add(arrow(ICON_CLOSE)).on_hover_text("Close (Esc)").clicked();
+        close |= ui.add(arrow(ICON_CLOSE)).on_hover_text(tr("Close (Esc)")).clicked();
     });
     if let Some(with) = f.replace.as_mut() {
         ui.horizontal(|ui| {
             // Lined up under the query field: the chevron's width, then the search icon's.
             ui.add_space(ui.spacing().interact_size.y + ui.spacing().item_spacing.x);
             ui.label(ICON_FIND_REPLACE.rich_text().size(18.0).color(ui.visuals().weak_text_color()));
-            let r = ui.add(egui::TextEdit::singleline(with).hint_text("Replace").desired_width(260.0));
+            let r = ui.add(egui::TextEdit::singleline(with).hint_text(tr("Replace")).desired_width(260.0));
             let (enter, esc) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
             if r.lost_focus() && enter {
                 replace_one = true;
@@ -551,8 +552,8 @@ fn find_bar(ui: &mut egui::Ui, ed: &mut Editor) {
                 close = true;
             }
             let any = !m.is_empty();
-            replace_one |= ui.add_enabled(any, egui::Button::new("Replace")).on_hover_text("Replace this match and go to the next (Enter)").clicked();
-            replace_all = ui.add_enabled(any, egui::Button::new("Replace all")).clicked();
+            replace_one |= ui.add_enabled(any, egui::Button::new(tr("Replace"))).on_hover_text(tr("Replace this match and go to the next (Enter)")).clicked();
+            replace_all = ui.add_enabled(any, egui::Button::new(tr("Replace all"))).clicked();
         });
     }
     if replace_all {
@@ -602,17 +603,17 @@ fn conflict_bar(ui: &mut egui::Ui, ed: &mut Editor) -> Option<Resolve> {
         ui.horizontal(|ui| {
             ui.label(ICON_WARNING.rich_text().size(18.0).color(warn));
             ui.vertical(|ui| {
-                ui.strong("This file changed on disk while you have unsaved edits.");
-                ui.weak("Saving is paused until you choose which version to keep.");
+                ui.strong(tr("This file changed on disk while you have unsaved edits."));
+                ui.weak(tr("Saving is paused until you choose which version to keep."));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Load disk version").on_hover_text("Drop your edits").clicked() {
+                if ui.button(tr("Load disk version")).on_hover_text(tr("Drop your edits")).clicked() {
                     resolve = Some(Resolve::Disk);
                 }
-                if ui.button("Overwrite with mine").on_hover_text("Save your edits over the disk version").clicked() {
+                if ui.button(tr("Overwrite with mine")).on_hover_text(tr("Save your edits over the disk version")).clicked() {
                     resolve = Some(Resolve::Mine);
                 }
-                ui.toggle_value(&mut ed.show_disk, (ICON_DIFFERENCE.rich_text(), "Show changes"));
+                ui.toggle_value(&mut ed.show_disk, (ICON_DIFFERENCE.rich_text(), tr("Show changes")));
             });
         });
         if ed.show_disk {
@@ -631,8 +632,8 @@ fn diff_view(ui: &mut egui::Ui, mine: &str, disk: &str, path: &Path) {
     let near = |k: usize| diff[k.saturating_sub(2)..(k + 3).min(diff.len())].iter().any(|d| d.0 != ' ');
     let v = ui.visuals().clone();
     ui.horizontal(|ui| {
-        ui.label(RichText::new("− only in your edits").monospace().color(v.error_fg_color));
-        ui.label(RichText::new("+ only on disk").monospace().color(Color32::from_rgb(90, 170, 100)));
+        ui.label(RichText::new(tr("− only in your edits")).monospace().color(v.error_fg_color));
+        ui.label(RichText::new(tr("+ only on disk")).monospace().color(Color32::from_rgb(90, 170, 100)));
     });
     egui::ScrollArea::vertical().id_salt(("diff", path)).max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -640,7 +641,7 @@ fn diff_view(ui: &mut egui::Ui, mine: &str, disk: &str, path: &Path) {
         while k < diff.len() {
             if !near(k) {
                 let run = (k..diff.len()).take_while(|&x| !near(x)).count();
-                ui.label(RichText::new(format!("  ⋯ {run} unchanged line{}", if run == 1 { "" } else { "s" })).monospace().weak());
+                ui.label(RichText::new(format!("  ⋯ {}", count(run, "unchanged line", "unchanged lines"))).monospace().weak());
                 k += run;
                 continue;
             }
@@ -665,14 +666,14 @@ fn gone_bar(ui: &mut egui::Ui) -> Option<Resolve> {
         ui.horizontal(|ui| {
             ui.label(ICON_DELETE.rich_text().size(18.0).color(err));
             ui.vertical(|ui| {
-                ui.strong("This file was deleted on disk.");
-                ui.weak("Saving is paused: save it again to bring it back, or close the tab.");
+                ui.strong(tr("This file was deleted on disk."));
+                ui.weak(tr("Saving is paused: save it again to bring it back, or close the tab."));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Close tab").clicked() {
+                if ui.button(tr("Close tab")).clicked() {
                     resolve = Some(Resolve::Close);
                 }
-                if ui.button("Save again").on_hover_text("Write the file again from this tab").clicked() {
+                if ui.button(tr("Save again")).on_hover_text(tr("Write the file again from this tab")).clicked() {
                     resolve = Some(Resolve::Recreate);
                 }
             });
@@ -857,7 +858,7 @@ fn preview(ui: &mut egui::Ui, ed: &mut Editor, find_id: FindId) -> Option<PathBu
                                         for (n, (item, path)) in items.into_iter().enumerate() {
                                             let last = if n + 1 < count { "," } else { "" };
                                             match path {
-                                                Some(p) if ui.link(format!("{item}{last}")).on_hover_text("Open").clicked() => open = Some(p),
+                                                Some(p) if ui.link(format!("{item}{last}")).on_hover_text(tr("Open file")).clicked() => open = Some(p),
                                                 Some(_) => {}
                                                 None => {
                                                     ui.label(format!("{item}{last}"));

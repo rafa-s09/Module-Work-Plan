@@ -31,6 +31,8 @@ pub enum Dialog {
     About { art: Option<egui::TextureHandle> },
     /// Rename a file or folder; `name` starts as its current name.
     Rename { path: PathBuf, name: String, error: String },
+    /// Settings > Preferences: the language in use and the ones to choose from (code, name).
+    Settings { lang: String, langs: Vec<(String, String)>, error: String },
     /// Go to file (Ctrl+P): what is typed and the row picked with the arrows.
     QuickOpen { query: String, selected: usize },
     /// Confirm Replace all in the project: the replacement and what it would change.
@@ -122,10 +124,10 @@ impl App {
             _ => v.project.rel(&path),
         };
         let note = match doc.map(|d| (d.kind(), d.id())) {
-            Some(("task", id)) => v.claims.iter().find(|c| c.task == id).map(|c| format!("{} is working on it: its claim and module locks are freed.", c.agent)).unwrap_or_default(),
+            Some(("task", id)) => v.claims.iter().find(|c| c.task == id).map(|c| trf("{agent} is working on it: its claim and module locks are freed.", &[("agent", &c.agent)])).unwrap_or_default(),
             Some(("module", id)) => {
                 let users: Vec<&str> = v.project.of_kind("task").filter(|t| t.get("status") != "done" && t.list("modules").iter().any(|m| m == id)).map(Doc::id).collect();
-                if users.is_empty() { String::new() } else { format!("Tasks not done still list it: {}.", users.join(", ")) }
+                if users.is_empty() { String::new() } else { trf("Tasks not done still list it: {ids}.", &[("ids", &users.join(", "))]) }
             }
             _ => String::new(),
         };
@@ -141,30 +143,31 @@ impl App {
         let mut next: Option<Dialog> = None; // shown in place of this one
         let mut moved: Option<(PathBuf, PathBuf)> = None;
         let mut replace_now: Option<String> = None;
+        let mut new_lang: Option<String> = None;
         let root = self.root.clone();
         let recent = self.recent.clone();
         match self.dialog.as_mut()? {
             Dialog::NewTask { title, size, modules, error } => {
                 egui::Modal::new(egui::Id::unique("new-task")).show(ctx, |ui| {
                     ui.set_width(480.0);
-                    dialog_title(ui, ICON_ADD_TASK, "New task");
-                    ui.weak("Created in mwp/tasks/open/ with the next free ID, from the task template.");
+                    dialog_title(ui, ICON_ADD_TASK, tr("New task"));
+                    ui.weak(tr("Created in mwp/tasks/open/ with the next free ID, from the task template."));
                     ui.add_space(12.0);
-                    section(ui, "Task", |ui| {
-                        ui.label("Title");
-                        ui.add(egui::TextEdit::singleline(title).hint_text("What changes, in a few words").desired_width(f32::INFINITY));
+                    section(ui, tr("Task"), |ui| {
+                        ui.label(tr("Title"));
+                        ui.add(egui::TextEdit::singleline(title).hint_text(tr("What changes, in a few words")).desired_width(f32::INFINITY));
                         ui.add_space(6.0);
-                        ui.label("Size");
+                        ui.label(tr("Size"));
                         ui.horizontal(|ui| {
                             for (s, _) in SIZES {
                                 ui.selectable_value(size, s, format!("  {s}  "));
                             }
                         });
-                        ui.weak(SIZES.iter().find(|s| s.0 == *size).map_or("", |s| s.1));
+                        ui.weak(tr(SIZES.iter().find(|s| s.0 == *size).map_or("", |s| s.1)));
                     });
-                    section(ui, "Modules it may write", |ui| {
+                    section(ui, tr("Modules it may write"), |ui| {
                         if modules.is_empty() {
-                            ui.weak("No module yet: create one first with New module.");
+                            ui.weak(tr("No module yet: create one first with New module."));
                         }
                         egui::ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
                             for (id, on) in modules.iter_mut() {
@@ -175,51 +178,51 @@ impl App {
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!title.trim().is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!title.trim().is_empty(), primary(ui, tr("Create"))).clicked() {
                             let chosen: Vec<&str> = modules.iter().filter(|m| m.1).map(|m| m.0.as_str()).collect();
                             match Project::open(&root).and_then(|p| ops::task_new(&p, title, size, &[("modules", Some(&chosen.join(",")))])) {
                                 Ok(lines) => action = created(&root, &lines),
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::NewModule { folder, id, kind, summary, error } => {
                 egui::Modal::new(egui::Id::unique("new-module")).show(ctx, |ui| {
                     ui.set_width(480.0);
-                    dialog_title(ui, ICON_EXTENSION, "New module");
+                    dialog_title(ui, ICON_EXTENSION, tr("New module"));
                     let dir = if folder.is_empty() { "mwp/modules/".to_string() } else { format!("mwp/modules/{folder}/") };
-                    ui.weak(format!("Created in {dir} from the module template and added to map.md."));
+                    ui.weak(trf("Created in {dir} from the module template and added to map.md.", &[("dir", &dir)]));
                     ui.add_space(12.0);
                     let file = slug(id);
-                    section(ui, "Module", |ui| {
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(id).hint_text("order, user-auth").desired_width(f32::INFINITY));
-                        ui.weak(if file.is_empty() { "Lowercase words joined by -.".to_string() } else { format!("ID {file}  ·  {dir}{file}.md") });
+                    section(ui, tr("Module"), |ui| {
+                        ui.label(tr("Name"));
+                        ui.add(egui::TextEdit::singleline(id).hint_text(tr("order, user-auth")).desired_width(f32::INFINITY));
+                        ui.weak(if file.is_empty() { tr("Lowercase words joined by -.").to_string() } else { format!("ID {file}  ·  {dir}{file}.md") });
                         ui.add_space(6.0);
-                        ui.label("Type");
+                        ui.label(tr("Type"));
                         ui.horizontal_wrapped(|ui| {
                             for (t, _) in MODULE_TYPES {
                                 ui.selectable_value(kind, t, format!("  {t}  "));
                             }
                         });
-                        ui.weak(MODULE_TYPES.iter().find(|t| t.0 == *kind).map_or("", |t| t.1));
+                        ui.weak(tr(MODULE_TYPES.iter().find(|t| t.0 == *kind).map_or("", |t| t.1)));
                         ui.add_space(6.0);
-                        ui.label("Summary");
-                        ui.add(egui::TextEdit::singleline(summary).hint_text("Its responsibility, in one line").desired_width(f32::INFINITY));
+                        ui.label(tr("Summary"));
+                        ui.add(egui::TextEdit::singleline(summary).hint_text(tr("Its responsibility, in one line")).desired_width(f32::INFINITY));
                     });
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!file.is_empty() && !summary.trim().is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!file.is_empty() && !summary.trim().is_empty(), primary(ui, tr("Create"))).clicked() {
                             match Project::open(&root).and_then(|p| ops::module_new(&p, folder, &file, kind, summary)) {
                                 Ok(lines) => action = created(&root, &lines),
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
@@ -227,24 +230,24 @@ impl App {
                 let area = *area;
                 egui::Modal::new(egui::Id::unique("new-folder")).show(ctx, |ui| {
                     ui.set_width(420.0);
-                    dialog_title(ui, ICON_CREATE_NEW_FOLDER, "New folder");
+                    dialog_title(ui, ICON_CREATE_NEW_FOLDER, tr("New folder"));
                     let base = area.dir();
                     let dir = if parent.is_empty() { format!("mwp/{base}/") } else { format!("mwp/{base}/{parent}/") };
                     ui.weak(match area {
-                        Area::Modules => format!("A folder for modules, inside {dir}"),
-                        Area::Content => format!("A folder for resources, inside {dir}"),
+                        Area::Modules => trf("A folder for modules, inside {dir}", &[("dir", &dir)]),
+                        Area::Content => trf("A folder for resources, inside {dir}", &[("dir", &dir)]),
                     });
                     ui.add_space(12.0);
                     let file = slug(name);
-                    section(ui, "Folder", |ui| {
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(name).hint_text("billing").desired_width(f32::INFINITY));
-                        ui.weak(if file.is_empty() { "Lowercase words joined by -.".to_string() } else { format!("{dir}{file}/") });
+                    section(ui, tr("Folder"), |ui| {
+                        ui.label(tr("Name"));
+                        ui.add(egui::TextEdit::singleline(name).hint_text(tr("billing")).desired_width(f32::INFINITY));
+                        ui.weak(if file.is_empty() { tr("Lowercase words joined by -.").to_string() } else { format!("{dir}{file}/") });
                     });
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!file.is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!file.is_empty(), primary(ui, tr("Create"))).clicked() {
                             let made = Project::open(&root).and_then(|p| match area {
                                 Area::Modules => ops::module_folder_new(&p, parent, &file),
                                 Area::Content => ops::content_folder_new(&p, parent, &file),
@@ -254,33 +257,33 @@ impl App {
                                 Err(e) => *error = e,
                             }
                         }
-                        close |= ui.add(secondary("Cancel")).clicked();
+                        close |= ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::NewSpec { title, owner, owners, lifetime, error } => {
                 egui::Modal::new(egui::Id::unique("new-spec")).show(ctx, |ui| {
                     ui.set_width(480.0);
-                    dialog_title(ui, ICON_ARTICLE, "New SPEC");
-                    ui.weak("Created in mwp/specs/ with the next free ID, from the SPEC template.");
+                    dialog_title(ui, ICON_ARTICLE, tr("New SPEC"));
+                    ui.weak(tr("Created in mwp/specs/ with the next free ID, from the SPEC template."));
                     ui.add_space(12.0);
-                    section(ui, "SPEC", |ui| {
-                        ui.label("Title");
-                        ui.add(egui::TextEdit::singleline(title).hint_text("What it specifies").desired_width(f32::INFINITY));
+                    section(ui, tr("SPEC"), |ui| {
+                        ui.label(tr("Title"));
+                        ui.add(egui::TextEdit::singleline(title).hint_text(tr("What it specifies")).desired_width(f32::INFINITY));
                         ui.add_space(6.0);
-                        ui.label("Lifetime");
+                        ui.label(tr("Lifetime"));
                         ui.horizontal(|ui| {
                             for (l, _) in LIFETIMES {
                                 ui.selectable_value(lifetime, l, format!("  {l}  "));
                             }
                         });
-                        ui.weak(LIFETIMES.iter().find(|l| l.0 == *lifetime).map_or("", |l| l.1));
+                        ui.weak(tr(LIFETIMES.iter().find(|l| l.0 == *lifetime).map_or("", |l| l.1)));
                     });
-                    section(ui, "Owner", |ui| {
+                    section(ui, tr("Owner"), |ui| {
                         if owners.is_empty() {
-                            ui.weak("No module or task yet: create one first.");
+                            ui.weak(tr("No module or task yet: create one first."));
                         } else {
-                            ui.weak("The module or task this SPEC belongs to.");
+                            ui.weak(tr("The module or task this SPEC belongs to."));
                             egui::ComboBox::from_id_salt("spec-owner").selected_text(owner.as_str()).width(ui.available_width()).show_ui(ui, |ui| {
                                 for o in owners.iter() {
                                     ui.selectable_value(owner, o.clone(), o.as_str());
@@ -291,28 +294,28 @@ impl App {
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!title.trim().is_empty() && !owner.is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!title.trim().is_empty() && !owner.is_empty(), primary(ui, tr("Create"))).clicked() {
                             match Project::open(&root).and_then(|p| ops::spec_new(&p, title, owner, lifetime)) {
                                 Ok(lines) => action = created(&root, &lines),
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::NewAdr { title, modules, adrs, supersedes, error } => {
                 egui::Modal::new(egui::Id::unique("new-adr")).show(ctx, |ui| {
                     ui.set_width(480.0);
-                    dialog_title(ui, ICON_GAVEL, "New ADR");
-                    ui.weak("A decision record, created as proposed in mwp/decisions/ with the next free ID.");
+                    dialog_title(ui, ICON_GAVEL, tr("New ADR"));
+                    ui.weak(tr("A decision record, created as proposed in mwp/decisions/ with the next free ID."));
                     ui.add_space(12.0);
-                    section(ui, "Decision", |ui| {
-                        ui.label("Title");
-                        ui.add(egui::TextEdit::singleline(title).hint_text("What was decided, in a few words").desired_width(f32::INFINITY));
+                    section(ui, tr("Decision"), |ui| {
+                        ui.label(tr("Title"));
+                        ui.add(egui::TextEdit::singleline(title).hint_text(tr("What was decided, in a few words")).desired_width(f32::INFINITY));
                         ui.add_space(6.0);
-                        ui.label("Replaces");
-                        let none = "None: a new decision".to_string();
+                        ui.label(tr("Replaces"));
+                        let none = tr("None: a new decision").to_string();
                         let shown = adrs.iter().find(|a| a.0 == *supersedes).map_or(none.clone(), |a| format!("{}  {}", a.0, a.1));
                         egui::ComboBox::from_id_salt("adr-supersedes").selected_text(shown).width(ui.available_width()).show_ui(ui, |ui| {
                             ui.selectable_value(supersedes, String::new(), none);
@@ -321,12 +324,12 @@ impl App {
                             }
                         });
                         if !supersedes.is_empty() {
-                            ui.weak(format!("{supersedes} will be marked superseded."));
+                            ui.weak(trf("{id} will be marked superseded.", &[("id", supersedes)]));
                         }
                     });
-                    section(ui, "Modules it governs", |ui| {
+                    section(ui, tr("Modules it governs"), |ui| {
                         if modules.is_empty() {
-                            ui.weak("No module yet.");
+                            ui.weak(tr("No module yet."));
                         }
                         egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                             for (id, on) in modules.iter_mut() {
@@ -337,7 +340,7 @@ impl App {
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!title.trim().is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!title.trim().is_empty(), primary(ui, tr("Create"))).clicked() {
                             let chosen: Vec<&str> = modules.iter().filter(|m| m.1).map(|m| m.0.as_str()).collect();
                             let old = Some(supersedes.as_str()).filter(|s| !s.is_empty());
                             match Project::open(&root).and_then(|p| ops::adr_new(&p, title, Some(&chosen.join(",")), old)) {
@@ -345,18 +348,18 @@ impl App {
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::StartTask { id, agent, agents, modules, error } => {
                 egui::Modal::new(egui::Id::unique("start-task")).show(ctx, |ui| {
                     ui.set_width(440.0);
-                    dialog_title(ui, ICON_PLAY_ARROW, &format!("Start {id}"));
-                    ui.weak(if modules.is_empty() { "Claims the task for an agent. It locks no module.".to_string() } else { format!("Claims the task for an agent and locks: {}.", modules.join(", ")) });
+                    dialog_title(ui, ICON_PLAY_ARROW, &trf("Start {id}", &[("id", id)]));
+                    ui.weak(if modules.is_empty() { tr("Claims the task for an agent. It locks no module.").to_string() } else { trf("Claims the task for an agent and locks: {modules}.", &[("modules", &modules.join(", "))]) });
                     ui.add_space(12.0);
-                    section(ui, "Agent", |ui| {
-                        ui.add(egui::TextEdit::singleline(agent).hint_text("Who works on it").desired_width(f32::INFINITY));
+                    section(ui, tr("Agent"), |ui| {
+                        ui.add(egui::TextEdit::singleline(agent).hint_text(tr("Who works on it")).desired_width(f32::INFINITY));
                         if !agents.is_empty() {
                             ui.horizontal_wrapped(|ui| {
                                 for a in agents.iter() {
@@ -368,36 +371,36 @@ impl App {
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!agent.trim().is_empty(), primary(ui, "Start")).clicked() {
+                        if ui.add_enabled(!agent.trim().is_empty(), primary(ui, tr("Start"))).clicked() {
                             match Project::open(&root).and_then(|p| ops::task_start(&p, id, agent.trim())) {
                                 Ok(_) => (changed, close) = (true, true),
                                 Err(e) => *error = e,
                             }
                         }
-                        close |= ui.add(secondary("Cancel")).clicked();
+                        close |= ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::Agents { agents, installed, update, error } => {
                 egui::Modal::new(egui::Id::unique("agents")).show(ctx, |ui| {
                     ui.set_width(540.0);
-                    dialog_title(ui, ICON_SMART_TOY, "Project agents");
-                    ui.weak("Adds the instruction file and the skills of each agent you check, like mwp init --agent. Existing files are never overwritten.");
+                    dialog_title(ui, ICON_SMART_TOY, tr("Project agents"));
+                    ui.weak(tr("Adds the instruction file and the skills of each agent you check, like mwp init --agent. Existing files are never overwritten."));
                     ui.add_space(12.0);
-                    section(ui, "Agents", |ui| {
+                    section(ui, tr("Agents"), |ui| {
                         egui::Grid::new("project-agents").num_columns(3).spacing([24.0, 6.0]).show(ui, |ui| {
                             for ((on, here), a) in agents.iter_mut().zip(installed.iter()).zip(AGENTS.iter()) {
                                 ui.add_enabled(!here, egui::Checkbox::new(on, a.name));
                                 ui.weak(format!("{}  ·  {}", a.pointer, a.skills));
-                                ui.weak(if *here { "set up" } else { "" });
+                                ui.weak(if *here { tr("set up") } else { "" });
                                 ui.end_row();
                             }
                         });
                     });
                     let any_here = installed.contains(&true);
-                    section(ui, "Skills", |ui| {
-                        ui.add_enabled(any_here, egui::Checkbox::new(update, "Update the skills of the agents already set up to this version"));
-                        ui.weak("Like mwp init --update-skills: rewrites only their mwp and module skills.");
+                    section(ui, tr("Skills"), |ui| {
+                        ui.add_enabled(any_here, egui::Checkbox::new(update, tr("Update the skills of the agents already set up to this version")));
+                        ui.weak(tr("Like mwp init --update-skills: rewrites only their mwp and module skills."));
                     });
                     error_line(ui, error);
                     ui.separator();
@@ -405,7 +408,7 @@ impl App {
                         let new: Vec<&scaffold::Agent> = AGENTS.iter().zip(agents.iter().zip(installed.iter())).filter(|(_, (on, here))| **on && !**here).map(|(a, _)| a).collect();
                         let here: Vec<&scaffold::Agent> = AGENTS.iter().zip(installed.iter()).filter(|(_, h)| **h).map(|(a, _)| a).collect();
                         let update = *update && any_here;
-                        if ui.add_enabled(!new.is_empty() || update, primary(ui, "Apply")).clicked() {
+                        if ui.add_enabled(!new.is_empty() || update, primary(ui, tr("Apply"))).clicked() {
                             let mut lines = Vec::new();
                             let done = (if new.is_empty() { Ok(Vec::new()) } else { scaffold::init(&root, None, &new, true) })
                                 .and_then(|l| {
@@ -416,15 +419,56 @@ impl App {
                                 Ok(l) => {
                                     lines.extend(l);
                                     let changes: Vec<&str> = lines.iter().filter(|l| l.starts_with("create") || l.starts_with("update")).map(String::as_str).collect();
-                                    let text = if changes.is_empty() { "Nothing to change: the files were already there and the skills up to date.".to_string() } else { changes.join("\n") };
-                                    next = Some(Dialog::Notice { title: "Project agents".into(), text });
+                                    let text = if changes.is_empty() { tr("Nothing to change: the files were already there and the skills up to date.").to_string() } else { changes.join("\n") };
+                                    next = Some(Dialog::Notice { title: tr("Project agents").into(), text });
                                     changed = true;
                                 }
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
+                });
+            }
+            Dialog::Settings { lang, langs, error } => {
+                egui::Modal::new(egui::Id::unique("settings")).show(ctx, |ui| {
+                    ui.set_width(480.0);
+                    dialog_title(ui, ICON_SETTINGS, tr("Preferences"));
+                    ui.add_space(8.0);
+                    section(ui, tr("Language"), |ui| {
+                        let shown = langs.iter().find(|l| l.0 == *lang).map_or(lang.clone(), |l| l.1.clone());
+                        let mut picked = None;
+                        let r = egui::ComboBox::from_id_salt("language").selected_text(&shown).width(240.0).show_ui(ui, |ui| {
+                            for (code, name) in langs.iter() {
+                                if ui.selectable_label(code == lang, format!("{name}  ({code})")).clicked() {
+                                    picked = Some(code.clone());
+                                }
+                            }
+                        });
+                        r.response.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::ComboBox, true, &shown));
+                        if let Some(code) = picked {
+                            match i18n::set(&code) {
+                                Ok(()) => (*lang, *error, new_lang) = (code.clone(), String::new(), Some(code)),
+                                Err(e) => *error = e,
+                            }
+                        }
+                        ui.add_space(4.0);
+                        ui.weak(tr("Each language is a JSON file that maps the English texts to their translation. Add a file to the folder for another language; a text missing from it stays in English."));
+                        if let Some(dir) = i18n::folder() {
+                            ui.horizontal(|ui| {
+                                if ui.button(ic(ICON_FOLDER_OPEN, tr("Open folder"))).on_hover_text(dir.display().to_string()).clicked() {
+                                    *error = open_external(&dir, false).err().unwrap_or_default();
+                                }
+                                if ui.button(ic(ICON_REFRESH, tr("Reload files"))).on_hover_text(tr("Read the language files again, after editing them")).clicked() {
+                                    *langs = i18n::available();
+                                    *error = i18n::set(lang).err().unwrap_or_default();
+                                }
+                            });
+                        }
+                    });
+                    error_line(ui, error);
+                    ui.separator();
+                    right_row(ui, |ui| close = ui.add(primary(ui, tr("Close"))).clicked());
                 });
             }
             Dialog::QuickOpen { query, selected } => {
@@ -439,7 +483,7 @@ impl App {
                     if up {
                         *selected = selected.saturating_sub(1);
                     }
-                    let r = ui.add(egui::TextEdit::singleline(query).hint_text("File name, ID or title").desired_width(f32::INFINITY));
+                    let r = ui.add(egui::TextEdit::singleline(query).hint_text(tr("File name, ID or title")).desired_width(f32::INFINITY));
                     if r.changed() {
                         *selected = 0;
                     }
@@ -462,7 +506,7 @@ impl App {
                             }
                         }
                         if list.is_empty() {
-                            ui.weak("No file matches.");
+                            ui.weak(tr("No file matches."));
                         }
                     });
                     picked.map(|e| e.path.clone())
@@ -481,23 +525,21 @@ impl App {
             Dialog::ReplaceInProject { with, hits, files, open } => {
                 egui::Modal::new(egui::Id::unique("replace-project")).show(ctx, |ui| {
                     ui.set_width(460.0);
-                    dialog_title(ui, ICON_FIND_REPLACE, "Replace in project");
-                    let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
-                    let matches = if *hits == 1 { "1 match".to_string() } else { format!("{hits} matches") };
-                    ui.label(format!("Replace {matches} in {}?", plural(*files, "file")));
+                    dialog_title(ui, ICON_FIND_REPLACE, tr("Replace in project"));
+                    ui.label(trf("Replace {matches} in {files}?", &[("matches", &count(*hits, "match", "matches")), ("files", &count(*files, "file", "files"))]));
                     let written = *files - *open;
                     if written > 0 {
-                        ui.weak(format!("{} written now; the disk keeps no copy of the old text.", plural(written, "file")));
+                        ui.weak(trf("{files} written now; the disk keeps no copy of the old text.", &[("files", &count(written, "file", "files"))]));
                     }
                     if *open > 0 {
-                        ui.weak(format!("{} open in a tab: changed there and left unsaved, so Ctrl+Z in the tab undoes it.", plural(*open, "file")));
+                        ui.weak(trf("{files} open in a tab: changed there and left unsaved, so Ctrl+Z in the tab undoes it.", &[("files", &count(*open, "file", "files"))]));
                     }
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add(primary(ui, "Replace")).clicked() {
+                        if ui.add(primary(ui, tr("Replace"))).clicked() {
                             replace_now = Some(with.clone());
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
@@ -506,24 +548,24 @@ impl App {
                     ui.set_width(420.0);
                     ui.vertical_centered(|ui| {
                         if let Some(art) = art {
-                            ui.add(egui::Image::new(&*art).fit_to_exact_size(egui::vec2(180.0, 180.0)).alt_text("MWP mascot"));
+                            ui.add(egui::Image::new(&*art).fit_to_exact_size(egui::vec2(180.0, 180.0)).alt_text(tr("MWP mascot")));
                         }
-                        ui.heading(RichText::new("MWP").strong());
-                        ui.label("Module Work Plan");
+                        ui.heading(RichText::new(tr("MWP")).strong());
+                        ui.label(tr("Module Work Plan"));
                         ui.add_space(6.0);
                         ui.weak(format!("mwp-gui {}  ·  mwp core {}", env!("CARGO_PKG_VERSION"), mwp_core::VERSION));
                         ui.add_space(6.0);
                         ui.label(env!("CARGO_PKG_DESCRIPTION"));
-                        ui.weak(format!("License: {}", env!("CARGO_PKG_LICENSE")));
+                        ui.weak(trf("License: {license}", &[("license", env!("CARGO_PKG_LICENSE"))]));
                     });
                     ui.separator();
-                    right_row(ui, |ui| close = ui.add(primary(ui, "OK")).clicked());
+                    right_row(ui, |ui| close = ui.add(primary(ui, tr("OK"))).clicked());
                 });
             }
             Dialog::Rename { path, name, error } => {
                 egui::Modal::new(egui::Id::unique("rename")).show(ctx, |ui| {
                     ui.set_width(440.0);
-                    dialog_title(ui, ICON_DRIVE_FILE_RENAME_OUTLINE, &format!("Rename {}", folder_name(path)));
+                    dialog_title(ui, ICON_DRIVE_FILE_RENAME_OUTLINE, &trf("Rename {name}", &[("name", &folder_name(path))]));
                     let p = Project::open(&root);
                     ui.weak(p.as_ref().map_or(String::new(), |p| p.rel(path)));
                     ui.add_space(12.0);
@@ -533,13 +575,13 @@ impl App {
                     }
                     let doc = p.as_ref().ok().and_then(|p| p.docs.iter().find(|d| d.path == *path)).filter(|d| !d.id().is_empty());
                     if let Some(d) = doc {
-                        ui.weak(format!("The ID stays {}: it is in the front matter, not the file name.", d.id()));
+                        ui.weak(trf("The ID stays {id}: it is in the front matter, not the file name.", &[("id", d.id())]));
                     }
                     error_line(ui, error);
                     ui.separator();
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     right_row(ui, |ui| {
-                        if ui.add(primary(ui, "Rename")).clicked() || enter {
+                        if ui.add(primary(ui, tr("Rename"))).clicked() || enter {
                             match p.and_then(|p| ops::rename(&p, path, name)) {
                                 Ok(lines) => {
                                     let to = lines.first().and_then(|l| l.split_once(" -> ")).map(|(_, rel)| root.join(rel));
@@ -549,7 +591,7 @@ impl App {
                                 Err(e) => *error = e,
                             }
                         }
-                        close |= ui.add(secondary("Cancel")).clicked();
+                        close |= ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
@@ -560,44 +602,44 @@ impl App {
                     ui.add_space(6.0);
                     ui.label(text.as_str());
                     ui.separator();
-                    right_row(ui, |ui| close = ui.add(primary(ui, "OK")).clicked());
+                    right_row(ui, |ui| close = ui.add(primary(ui, tr("OK"))).clicked());
                 });
             }
             Dialog::Delete { path, label, note, error } => {
                 egui::Modal::new(egui::Id::unique("delete")).show(ctx, |ui| {
                     ui.set_width(420.0);
-                    dialog_title(ui, ICON_DELETE, "Delete file");
+                    dialog_title(ui, ICON_DELETE, tr("Delete file"));
                     ui.add_space(6.0);
-                    ui.label(format!("Delete {label}?"));
+                    ui.label(trf("Delete {name}?", &[("name", label)]));
                     if !note.is_empty() {
                         ui.colored_label(ui.visuals().warn_fg_color, note.as_str());
                     }
-                    ui.weak("The file is removed from disk; the editor cannot bring it back.");
+                    ui.weak(tr("The file is removed from disk; the editor cannot bring it back."));
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        let danger = egui::Button::new(RichText::new("Delete").strong().color(Color32::WHITE)).fill(ui.visuals().error_fg_color).min_size(egui::vec2(96.0, 0.0));
+                        let danger = egui::Button::new(RichText::new(tr("Delete")).strong().color(Color32::WHITE)).fill(ui.visuals().error_fg_color).min_size(egui::vec2(96.0, 0.0));
                         if ui.add(danger).clicked() {
                             match Project::open(&root).and_then(|p| ops::delete(&p, path)) {
                                 Ok(_) => deleted = Some(path.clone()),
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::New { dir, name, agents, skills, error } => {
                 egui::Modal::new(egui::Id::unique("new-project")).show(ctx, |ui| {
                     ui.set_width(540.0);
-                    dialog_title(ui, ICON_CREATE_NEW_FOLDER, "New MWP project");
-                    ui.weak("Creates mwp/ and the files of each agent you choose. Existing files are never overwritten.");
+                    dialog_title(ui, ICON_CREATE_NEW_FOLDER, tr("New MWP project"));
+                    ui.weak(tr("Creates mwp/ and the files of each agent you choose. Existing files are never overwritten."));
                     ui.add_space(12.0);
 
-                    section(ui, "Location", |ui| {
-                        ui.label("Folder");
+                    section(ui, tr("Location"), |ui| {
+                        ui.label(tr("Folder"));
                         right_row(ui, |ui| {
-                            if ui.button("Browse…").clicked() {
+                            if ui.button(tr("Browse…")).clicked() {
                                 if let Some(picked) = pick_folder(dir) {
                                     // Follow the folder name unless the user typed a name of their own.
                                     if name.trim().is_empty() || *name == folder_name(Path::new(dir.trim())) {
@@ -606,23 +648,23 @@ impl App {
                                     *dir = picked.display().to_string();
                                 }
                             }
-                            ui.add(egui::TextEdit::singleline(dir).hint_text("Folder where mwp/ will be created").desired_width(f32::INFINITY));
+                            ui.add(egui::TextEdit::singleline(dir).hint_text(tr("Folder where mwp/ will be created")).desired_width(f32::INFINITY));
                         });
                         let folder = Path::new(dir.trim());
                         match () {
-                            _ if dir.trim().is_empty() => ui.weak("Choose where the project lives."),
-                            _ if folder.join("mwp").is_dir() => ui.colored_label(ui.visuals().warn_fg_color, "This folder already has an MWP project: only missing files will be added."),
-                            _ if folder.is_dir() => ui.weak("mwp/ will be created in this folder."),
-                            _ => ui.weak("The folder will be created."),
+                            _ if dir.trim().is_empty() => ui.weak(tr("Choose where the project lives.")),
+                            _ if folder.join("mwp").is_dir() => ui.colored_label(ui.visuals().warn_fg_color, tr("This folder already has an MWP project: only missing files will be added.")),
+                            _ if folder.is_dir() => ui.weak(tr("mwp/ will be created in this folder.")),
+                            _ => ui.weak(tr("The folder will be created.")),
                         };
                         ui.add_space(6.0);
-                        ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(name).hint_text("Project name").desired_width(f32::INFINITY));
-                        ui.weak("Written to mwp/PROJECT.md.");
+                        ui.label(tr("Name"));
+                        ui.add(egui::TextEdit::singleline(name).hint_text(tr("Project name")).desired_width(f32::INFINITY));
+                        ui.weak(tr("Written to mwp/PROJECT.md."));
                     });
 
-                    section(ui, "Agents", |ui| {
-                        ui.weak("Each agent gets its instruction file and its skills folder.");
+                    section(ui, tr("Agents"), |ui| {
+                        ui.weak(tr("Each agent gets its instruction file and its skills folder."));
                         ui.add_space(4.0);
                         egui::Grid::new("agents-grid").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
                             for (on, a) in agents.iter_mut().zip(AGENTS.iter()) {
@@ -632,18 +674,18 @@ impl App {
                             }
                         });
                         if !agents.iter().any(|on| *on) {
-                            ui.weak("None checked: Claude Code is used.");
+                            ui.weak(tr("None checked: Claude Code is used."));
                         }
                     });
 
-                    section(ui, "Options", |ui| {
-                        ui.checkbox(skills, "Install the agent skills (mwp, module)");
+                    section(ui, tr("Options"), |ui| {
+                        ui.checkbox(skills, tr("Install the agent skills (mwp, module)"));
                     });
 
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!dir.trim().is_empty(), primary(ui, "Create")).clicked() {
+                        if ui.add_enabled(!dir.trim().is_empty(), primary(ui, tr("Create"))).clicked() {
                             let folder = PathBuf::from(dir.trim());
                             let mut chosen: Vec<_> = AGENTS.iter().zip(agents.iter()).filter(|(_, on)| **on).map(|(a, _)| a).collect();
                             if chosen.is_empty() {
@@ -654,41 +696,41 @@ impl App {
                                 Err(e) => *error = e,
                             }
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
             Dialog::Open { dir, error } => {
                 egui::Modal::new(egui::Id::unique("open-project")).show(ctx, |ui| {
                     ui.set_width(540.0);
-                    dialog_title(ui, ICON_FOLDER_OPEN, "Open MWP project");
-                    ui.weak("The folder that contains mwp/.");
+                    dialog_title(ui, ICON_FOLDER_OPEN, tr("Open MWP project"));
+                    ui.weak(tr("The folder that contains mwp/."));
                     ui.add_space(12.0);
                     let mut open = |folder: PathBuf, error: &mut String| match Project::open(&folder) {
                         Ok(_) => action = Some(Action::Project(folder, false)),
-                        Err(e) => *error = format!("{e}. Use File > New project to create one."),
+                        Err(e) => *error = format!("{e}. {}", tr("Use File > New project to create one.")),
                     };
                     let mut chosen: Option<PathBuf> = None;
-                    section(ui, "Folder", |ui| {
+                    section(ui, tr("Folder"), |ui| {
                         right_row(ui, |ui| {
-                            if ui.button("Browse…").clicked() {
+                            if ui.button(tr("Browse…")).clicked() {
                                 // A picked folder opens at once; a wrong one shows why below.
                                 chosen = pick_folder(dir);
                                 if let Some(f) = &chosen {
                                     *dir = f.display().to_string();
                                 }
                             }
-                            ui.add(egui::TextEdit::singleline(dir).hint_text("Folder that contains mwp/").desired_width(f32::INFINITY));
+                            ui.add(egui::TextEdit::singleline(dir).hint_text(tr("Folder that contains mwp/")).desired_width(f32::INFINITY));
                         });
                         let folder = Path::new(dir.trim());
                         match () {
-                            _ if dir.trim().is_empty() => ui.weak("Type a folder or browse for it."),
-                            _ if folder.join("mwp").is_dir() => ui.weak("MWP project found."),
-                            _ => ui.colored_label(ui.visuals().warn_fg_color, "No mwp/ in this folder."),
+                            _ if dir.trim().is_empty() => ui.weak(tr("Type a folder or browse for it.")),
+                            _ if folder.join("mwp").is_dir() => ui.weak(tr("MWP project found.")),
+                            _ => ui.colored_label(ui.visuals().warn_fg_color, tr("No mwp/ in this folder.")),
                         };
                     });
                     if !recent.is_empty() {
-                        section(ui, "Recent", |ui| {
+                        section(ui, tr("Recent"), |ui| {
                             if let Some(f) = recent_list(ui, &recent) {
                                 chosen = Some(f);
                             }
@@ -700,10 +742,10 @@ impl App {
                     error_line(ui, error);
                     ui.separator();
                     right_row(ui, |ui| {
-                        if ui.add_enabled(!dir.trim().is_empty(), primary(ui, "Open")).clicked() {
+                        if ui.add_enabled(!dir.trim().is_empty(), primary(ui, tr("Open project"))).clicked() {
                             open(PathBuf::from(dir.trim()), error);
                         }
-                        close = ui.add(secondary("Cancel")).clicked();
+                        close = ui.add(secondary(tr("Cancel"))).clicked();
                     });
                 });
             }
@@ -715,10 +757,14 @@ impl App {
         if next.is_some() {
             self.dialog = next;
         }
+        if let Some(code) = new_lang {
+            self.lang = code;
+        }
         if let Some(with) = replace_now {
             let (n, failed) = self.replace_in_project(&with);
-            let text = if failed.is_empty() { format!("{n} replaced.") } else { format!("{n} replaced. Not written:\n{}", failed.join("\n")) };
-            self.dialog = Some(Dialog::Notice { title: "Replace in project".into(), text });
+            let done = trf("{n} replaced.", &[("n", &n.to_string())]);
+            let text = if failed.is_empty() { done } else { format!("{done} {}\n{}", tr("Not written:"), failed.join("\n")) };
+            self.dialog = Some(Dialog::Notice { title: tr("Replace in project").into(), text });
         }
         if let Some((from, to)) = moved {
             self.follow_move(&from, &to);
@@ -806,7 +852,7 @@ pub fn recent_list(ui: &mut egui::Ui, recent: &[PathBuf]) -> Option<PathBuf> {
 /// The native folder picker, starting at `start` when it is a folder.
 pub fn pick_folder(start: &str) -> Option<PathBuf> {
     let start = Path::new(start.trim());
-    let dialog = rfd::FileDialog::new().set_title("Project folder");
+    let dialog = rfd::FileDialog::new().set_title(tr("Project folder"));
     let dialog = if start.is_dir() { dialog.set_directory(start) } else { dialog };
     dialog.pick_folder()
 }
