@@ -27,6 +27,8 @@ pub enum Dialog {
     /// File > Project agents: `agents` checked, by `AGENTS` order; `installed` ones stay checked.
     /// `update` rewrites the installed agents' skills with this version.
     Agents { agents: Vec<bool>, installed: Vec<bool>, update: bool, error: String },
+    /// Rename a file or folder; `name` starts as its current name.
+    Rename { path: PathBuf, name: String, error: String },
     /// A message with an OK button, for an action that could not be done.
     Notice { title: String, text: String },
     /// `owners`: the modules, then the tasks not done.
@@ -38,6 +40,21 @@ pub enum Dialog {
 impl App {
     pub fn new_project_dialog(&self) -> Dialog {
         Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
+    }
+
+    /// Rename, for a file or folder the explorer may rename.
+    pub fn rename_dialog(&self, path: PathBuf) -> Option<Dialog> {
+        let v = self.view.as_ref().ok()?;
+        ops::movable(&v.project, &path).then(|| Dialog::Rename { name: folder_name(&path), path, error: String::new() })
+    }
+
+    /// Moves the tabs of a file (or of the files in a folder) that was renamed or moved.
+    pub fn follow_move(&mut self, from: &Path, to: &Path) {
+        for t in &mut self.tabs {
+            if let Ok(rest) = t.path.strip_prefix(from) {
+                t.path = if rest.as_os_str().is_empty() { to.to_path_buf() } else { to.join(rest) };
+            }
+        }
     }
 
     /// Project agents, with the agents whose skills are set up here checked.
@@ -106,6 +123,7 @@ impl App {
         let mut deleted: Option<PathBuf> = None;
         let mut changed = false; // the dialog changed the project without opening a file
         let mut next: Option<Dialog> = None; // shown in place of this one
+        let mut moved: Option<(PathBuf, PathBuf)> = None;
         let root = self.root.clone();
         let recent = self.recent.clone();
         match self.dialog.as_mut()? {
@@ -392,6 +410,39 @@ impl App {
                     });
                 });
             }
+            Dialog::Rename { path, name, error } => {
+                egui::Modal::new(egui::Id::unique("rename")).show(ctx, |ui| {
+                    ui.set_width(440.0);
+                    dialog_title(ui, ICON_DRIVE_FILE_RENAME_OUTLINE, &format!("Rename {}", folder_name(path)));
+                    let p = Project::open(&root);
+                    ui.weak(p.as_ref().map_or(String::new(), |p| p.rel(path)));
+                    ui.add_space(12.0);
+                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY));
+                    if ui.memory(|m| m.focused().is_none()) {
+                        r.request_focus();
+                    }
+                    let doc = p.as_ref().ok().and_then(|p| p.docs.iter().find(|d| d.path == *path)).filter(|d| !d.id().is_empty());
+                    if let Some(d) = doc {
+                        ui.weak(format!("The ID stays {}: it is in the front matter, not the file name.", d.id()));
+                    }
+                    error_line(ui, error);
+                    ui.separator();
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    right_row(ui, |ui| {
+                        if ui.add(primary(ui, "Rename")).clicked() || enter {
+                            match p.and_then(|p| ops::rename(&p, path, name)) {
+                                Ok(lines) => {
+                                    let to = lines.first().and_then(|l| l.split_once(" -> ")).map(|(_, rel)| root.join(rel));
+                                    moved = to.map(|to| (path.clone(), to));
+                                    (changed, close) = (true, true);
+                                }
+                                Err(e) => *error = e,
+                            }
+                        }
+                        close |= ui.add(secondary("Cancel")).clicked();
+                    });
+                });
+            }
             Dialog::Notice { title, text } => {
                 egui::Modal::new(egui::Id::unique("notice")).show(ctx, |ui| {
                     ui.set_width(420.0);
@@ -553,6 +604,9 @@ impl App {
         }
         if next.is_some() {
             self.dialog = next;
+        }
+        if let Some((from, to)) = moved {
+            self.follow_move(&from, &to);
         }
         if let Some(path) = deleted {
             if let Some(i) = self.tabs.iter().position(|t| t.path == path) {

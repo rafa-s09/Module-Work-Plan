@@ -10,16 +10,9 @@ Todos os itens foram feitos.
 
 ## Prioridade 2: entra se der tempo
 
-### 1. Renomear e mover
-- **O quê:** renomear e mover arquivos e pastas pelo explorador (arrastar para outra pasta ou F2).
-- **Cuidado:** renomear o arquivo de um módulo não muda o ID; mudar o ID exigiria atualizar as citações em tasks, SPECs e no `map.md`, e fica para depois.
-
-### 2. Conflitos com o disco, parte 2
+### 1. Conflitos com o disco, parte 2
 - **O quê:** na barra de conflito, mostrar a diferença linha a linha em vez da versão inteira; avisar quando o arquivo aberto foi apagado no disco (hoje salvar o recria sem aviso).
 - **Por onde começar:** `conflict_bar` e `Editor::refresh` em `editor.rs`.
-
-### 3. Filtros no quadro
-- **O quê:** filtrar os cartões por módulo, agente e tamanho, e buscar pelo título.
 
 ## Qualidade e manutenção
 
@@ -36,4 +29,4 @@ Ideias maiores, para uma v0.2 ou depois:
 - **Interface em português:** hoje a GUI é toda em inglês; traduzir exige separar os textos do código.
 - **Integração com git:** ver o que mudou desde o último commit, por arquivo.
 - **Temas e tamanho de fonte** configuráveis.
-- **Vários cursores** e outras edições avançadas no código.
+

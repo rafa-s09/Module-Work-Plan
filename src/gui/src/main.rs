@@ -117,6 +117,8 @@ struct Asks {
     adr_decide: Option<(String, &'static str)>,
     /// File > Project agents.
     agents: bool,
+    /// Rename this file (explorer menu).
+    rename: Option<PathBuf>,
 }
 
 struct App {
@@ -137,6 +139,7 @@ struct App {
     recent: Vec<PathBuf>,
     message: Option<String>,
     show_done: bool,
+    board_filter: BoardFilter,
     /// The bottom panel is open; `show_search` picks its Search tab over Problems.
     show_problems: bool,
     show_search: bool,
@@ -162,6 +165,7 @@ impl App {
             dialog: None,
             message: None,
             show_done: false,
+            board_filter: BoardFilter::default(),
             show_problems: true,
             show_search: false,
             search: Search::default(),
@@ -386,6 +390,12 @@ impl eframe::App for App {
         if ctx.input_mut(|i| i.consume_shortcut(&SAVE)) {
             if let Some(i) = self.active {
                 self.save_tab(i);
+            }
+        }
+        // F2 renames the open file, when it is one that can be renamed.
+        if self.dialog.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F2)) {
+            if let Some(path) = self.current().map(|e| e.path.clone()) {
+                self.dialog = self.rename_dialog(path);
             }
         }
         if ctx.input_mut(|i| i.consume_shortcut(&CLOSE_TAB)) {
@@ -653,7 +663,7 @@ impl eframe::App for App {
                         }
                     }
                     None => {
-                        board(ui, v, &mut self.show_done, &mut ask);
+                        board(ui, v, &mut self.show_done, &mut self.board_filter, &mut ask);
                     }
                     }
                 });
@@ -733,7 +743,22 @@ impl eframe::App for App {
                 }
                 self.reload();
             }
+            Some(FolderCmd::Rename(path)) => self.dialog = self.rename_dialog(path),
+            Some(FolderCmd::Move(from, dir)) => {
+                match Project::open(&self.root).and_then(|p| ops::move_into(&p, &from, &dir)) {
+                    Ok(lines) => {
+                        if let Some((_, rel)) = lines.first().and_then(|l| l.split_once(" -> ")) {
+                            self.follow_move(&from, &self.root.join(rel));
+                        }
+                    }
+                    Err(text) => self.dialog = Some(Dialog::Notice { title: format!("Cannot move {}", folder_name(&from)), text }),
+                }
+                self.reload();
+            }
             None => {}
+        }
+        if let Some(path) = ask.rename {
+            self.dialog = self.rename_dialog(path);
         }
         if ask.new_spec {
             self.dialog = self.new_spec_dialog();
@@ -1276,7 +1301,7 @@ mod tests {
 
         // Find in project: Ctrl+Shift+F, type, click a match: its file opens with the match selected.
         let ctx = h.ctx.clone();
-        h.state_mut().apply(&ctx, Action::Board);
+        h.state_mut().apply(&ctx, Action::Open(root.join("mwp/PROJECT.md"))); // not the board: its filter is a text field too
         h.key_combination_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, &[egui::Key::F]);
         h.run_steps(3);
         assert!(h.state().show_search);
@@ -1354,6 +1379,25 @@ mod tests {
         h.get_by_label_contains("mwp/constitution.md").click();
         h.run_steps(3);
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(root.join("mwp/constitution.md")));
+
+        // F2 renames the open file: its tab follows and the module keeps its ID.
+        let auth = Project::open(&root).unwrap().by_id("module", "user-auth").unwrap().path.clone();
+        let ctx = h.ctx.clone();
+        h.state_mut().apply(&ctx, Action::Open(auth.clone()));
+        h.run_steps(3);
+        h.key_press(egui::Key::F2);
+        h.run_steps(30);
+        match h.state_mut().dialog.as_mut() {
+            Some(Dialog::Rename { name, .. }) => *name = "auth".into(),
+            _ => panic!("F2 did not open Rename"),
+        }
+        h.run_steps(3);
+        h.get_by_label("Rename").click();
+        h.run_steps(3);
+        let renamed = auth.with_file_name("auth.md");
+        assert!(renamed.exists() && !auth.exists());
+        assert_eq!(h.state().current().map(|e| e.path.clone()), Some(renamed.clone()));
+        assert_eq!(Project::open(&root).unwrap().by_id("module", "user-auth").unwrap().path, renamed);
 
         // File > New project creates the project and opens its PROJECT.md.
         h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column

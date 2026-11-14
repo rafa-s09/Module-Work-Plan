@@ -165,9 +165,62 @@ pub fn drop_cmd(id: &str, from: &str, to: &str) -> Option<TaskCmd> {
     }
 }
 
+/// The board's filters; an empty field keeps every card.
+#[derive(Default)]
+pub struct BoardFilter {
+    /// Part of the title, the ID or a work code, in any case.
+    pub text: String,
+    pub module: String,
+    pub agent: String,
+    pub size: String,
+}
+
+impl BoardFilter {
+    pub fn keeps(&self, t: &Doc) -> bool {
+        let text = self.text.trim().to_lowercase();
+        let has = |s: &str| s.to_lowercase().contains(&text);
+        (text.is_empty() || has(t.title()) || has(t.id()) || t.list("external").iter().any(|e| has(e)))
+            && (self.module.is_empty() || t.list("modules").contains(&self.module))
+            && (self.agent.is_empty() || t.get("agent") == self.agent)
+            && (self.size.is_empty() || t.get("size") == self.size)
+    }
+
+    fn active(&self) -> bool {
+        !(self.text.trim().is_empty() && self.module.is_empty() && self.agent.is_empty() && self.size.is_empty())
+    }
+
+    /// The filter row: text, then a menu each for module, agent and size, and Clear.
+    fn show(&mut self, ui: &mut egui::Ui, p: &Project) {
+        ui.horizontal(|ui| {
+            ui.label(ICON_FILTER_LIST.rich_text().color(ui.visuals().weak_text_color()));
+            ui.add(egui::TextEdit::singleline(&mut self.text).hint_text("Title, ID or work code").desired_width(220.0));
+            let mut modules: Vec<String> = p.of_kind("module").map(|m| m.id().to_string()).collect();
+            modules.sort();
+            let mut agents: Vec<String> = p.of_kind("task").map(|t| t.get("agent").to_string()).filter(|a| !a.is_empty()).collect();
+            agents.sort();
+            agents.dedup();
+            let sizes: Vec<String> = SIZES.iter().map(|s| s.0.to_string()).collect();
+            for (value, all, options) in [(&mut self.module, "All modules", modules), (&mut self.agent, "All agents", agents), (&mut self.size, "All sizes", sizes)] {
+                let shown = if value.is_empty() { all.to_string() } else { value.clone() };
+                let r = egui::ComboBox::from_id_salt(all).selected_text(&shown).show_ui(ui, |ui| {
+                    ui.selectable_value(value, String::new(), all);
+                    for o in options {
+                        ui.selectable_value(value, o.clone(), o);
+                    }
+                });
+                // Named for screen readers by what it shows ("All modules", or the module).
+                r.response.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::ComboBox, true, &shown));
+            }
+            if self.active() && ui.button(ic(ICON_CLOSE, "Clear")).clicked() {
+                *self = BoardFilter::default();
+            }
+        });
+    }
+}
+
 /// The board: one column per status, a card per task. A card dragged to another column changes
 /// the task's status; the column it can go to is outlined while it is dragged.
-pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) {
+pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, filter: &mut BoardFilter, ask: &mut Asks) {
     ui.horizontal(|ui| {
         ui.label(ICON_VIEW_KANBAN.rich_text().size(24.0).color(ui.visuals().hyperlink_color));
         ui.heading("Board");
@@ -176,13 +229,14 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, ask: &mut Asks) 
             ui.checkbox(show_done, "Show done");
         });
     });
+    filter.show(ui, &v.project);
     ui.add_space(6.0);
     let columns: Vec<_> = COLUMNS.iter().filter(|c| c.0 != "done" || *show_done).collect();
     let (mut rects, mut dragged, mut dropped) = (Vec::new(), None, None);
     ui.columns(columns.len(), |cols| {
         for (ui, (status, label)) in cols.iter_mut().zip(columns) {
             rects.push((*status, ui.max_rect()));
-            let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") == *status).collect();
+            let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") == *status && filter.keeps(t)).collect();
             tasks.sort_by_key(|t| id_num(t.id()));
             ui.horizontal(|ui| {
                 let (icon, color) = status_icon(ui, status);
@@ -292,5 +346,21 @@ mod tests {
         assert_eq!(drop_cmd("T-1", "open", "done"), None, "only a task in progress or in review closes");
         assert_eq!(drop_cmd("T-1", "open", "open"), None);
         assert_eq!(drop_cmd("T-1", "done", "open"), None, "a done task never moves");
+    }
+
+    #[test]
+    fn board_filter_keeps_matching_cards() {
+        let f = std::env::temp_dir().join(format!("mwp-filter-{}.md", std::process::id()));
+        fs::write(&f, "---\nkind: task\nid: T-0007\nstatus: in_progress\nsize: M\nmodules: [order, cart]\nagent: codex\nexternal: [PROJ-12]\n---\n# T-0007 — Checkout total\n").unwrap();
+        let t = Doc::load(&f).unwrap();
+        let _ = fs::remove_file(&f);
+        let filter = |text: &str, module: &str, agent: &str, size: &str| BoardFilter { text: text.into(), module: module.into(), agent: agent.into(), size: size.into() };
+        assert!(filter("", "", "", "").keeps(&t) && !filter("", "", "", "").active());
+        for text in ["checkout", "t-0007", "proj-12"] {
+            assert!(filter(text, "", "", "").keeps(&t), "{text}");
+        }
+        assert!(!filter("login", "", "", "").keeps(&t));
+        assert!(filter("", "cart", "codex", "M").keeps(&t));
+        assert!(!filter("", "billing", "", "").keeps(&t) && !filter("", "", "claude", "").keeps(&t) && !filter("", "", "", "S").keeps(&t));
     }
 }

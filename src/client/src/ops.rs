@@ -281,6 +281,66 @@ pub fn deletable(p: &Project, path: &Path) -> bool {
     name.ends_with(".md") && !name.starts_with('_') && ["modules", "specs", "tasks/open"].iter().any(|d| path.starts_with(p.mwp.join(d)))
 }
 
+/// What can be renamed or moved: the files that can be deleted, and the folders under
+/// `mwp/modules/` and `mwp/content/`. ADRs and done tasks are records and stay where they are.
+pub fn movable(p: &Project, path: &Path) -> bool {
+    let in_area = ["modules", "content"].iter().any(|a| path.starts_with(p.mwp.join(a)) && path != p.mwp.join(a));
+    deletable(p, path) || (path.is_dir() && in_area)
+}
+
+/// Renames a file or folder in place. A doc keeps `.md` (added when left out); a folder is a slug.
+/// Renaming a module's file does not change its ID.
+pub fn rename(p: &Project, path: &Path, name: &str) -> Lines {
+    let name = name.trim();
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err("the name cannot be empty or hold `/`".into());
+    }
+    let in_content = path.starts_with(p.mwp.join("content"));
+    let name = if path.is_dir() {
+        if slug(name) != name {
+            return Err("the folder name is lowercase words joined by `-`, like `billing`".into());
+        }
+        name.to_string()
+    } else if in_content {
+        name.to_string()
+    } else {
+        if name.starts_with('_') {
+            return Err("names starting with `_` are templates".into());
+        }
+        if name.ends_with(".md") { name.to_string() } else { format!("{name}.md") }
+    };
+    relocate(p, path, &path.with_file_name(name))
+}
+
+/// Moves a file or folder into `dir`, a folder of the same area (`mwp/modules/` or `mwp/content/`).
+pub fn move_into(p: &Project, path: &Path, dir: &Path) -> Lines {
+    let area = ["modules", "content"].iter().map(|a| p.mwp.join(a)).find(|a| path.starts_with(a));
+    match area {
+        Some(a) if dir.starts_with(&a) && dir.is_dir() => {}
+        _ => return Err("files move only between folders of Modules, or of Content".into()),
+    }
+    if dir.starts_with(path) {
+        return Err("a folder cannot move into itself".into());
+    }
+    relocate(p, path, &dir.join(path.file_name().ok_or("nothing to move")?))
+}
+
+/// Renames `from` to `to`, never over an existing file.
+fn relocate(p: &Project, from: &Path, to: &Path) -> Lines {
+    if !movable(p, from) {
+        return Err(format!("{} cannot be renamed or moved", p.rel(from)));
+    }
+    if to == from {
+        return Ok(Vec::new());
+    }
+    // Case-only renames on Windows: the target "exists" because it is the same file.
+    if to.exists() && !to.to_string_lossy().eq_ignore_ascii_case(&from.to_string_lossy()) {
+        return Err(format!("{} already exists", p.rel(to)));
+    }
+    fs::rename(from, to).map_err(|e| format!("{}: {e}", p.rel(from)))?;
+    Ok(vec![format!("move {} -> {}", p.rel(from), p.rel(to))])
+}
+
 /// Deletes a module, a spec or an open task. A task's claim and locks are freed; `map.md` follows the modules.
 pub fn delete(p: &Project, path: &Path) -> Lines {
     if !deletable(p, path) {
@@ -431,7 +491,22 @@ mod tests {
         assert!(module_new(&open(), "billing", "vat", "domain", "x").is_err());
         assert!(read(&root.join("mwp/map.md")).unwrap().contains("| vat | api | VAT rules |"));
         assert!(!lint(&open()).warnings.iter().any(|w| w.contains("vat")), "{:?}", lint(&open()).warnings);
-        delete(&open(), &root.join("mwp/modules/billing/tax/vat.md")).unwrap();
+        // Rename and move: the ID stays; never over a file; only inside Modules or Content.
+        let vat = root.join("mwp/modules/billing/tax/vat.md");
+        assert!(rename(&open(), &vat, "_x").is_err() && rename(&open(), &vat, "a/b").is_err());
+        rename(&open(), &vat, "value-added").unwrap();
+        let renamed = root.join("mwp/modules/billing/tax/value-added.md");
+        assert!(renamed.exists() && open().by_id("module", "vat").unwrap().path == renamed);
+        assert!(rename(&open(), &root.join("mwp/modules/billing/tax"), "Bad Name").is_err());
+        assert!(move_into(&open(), &root.join("mwp/modules/billing"), &root.join("mwp/modules/billing/tax")).is_err(), "not into itself");
+        assert!(move_into(&open(), &renamed, &root.join("mwp/specs")).is_err(), "not out of Modules");
+        move_into(&open(), &renamed, &root.join("mwp/modules/billing")).unwrap();
+        let moved = root.join("mwp/modules/billing/value-added.md");
+        fs::write(root.join("mwp/modules/billing/tax/value-added.md"), "x").unwrap();
+        assert!(move_into(&open(), &moved, &root.join("mwp/modules/billing/tax")).unwrap_err().contains("already exists"));
+        fs::remove_file(root.join("mwp/modules/billing/tax/value-added.md")).unwrap();
+        assert!(!movable(&open(), &root.join("mwp/modules")) && !movable(&open(), &root.join("mwp/constitution.md")));
+        delete(&open(), &moved).unwrap();
         fs::remove_dir_all(root.join("mwp/modules/billing")).unwrap();
 
         // Content: files of any type are copied in, never over an existing one, and can be deleted.

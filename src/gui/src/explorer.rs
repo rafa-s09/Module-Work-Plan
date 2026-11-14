@@ -82,6 +82,28 @@ pub enum FolderCmd {
     AddFiles(String),
     NewFolder(Area, String),
     Remove(PathBuf),
+    Rename(PathBuf),
+    /// Move the file or folder into the folder (dragged onto it).
+    Move(PathBuf, PathBuf),
+}
+
+/// A folder title as the place a file or folder dragged in the explorer is dropped into.
+/// Dropping it where it already is does nothing.
+pub fn drop_target(ui: &egui::Ui, header: &egui::Response, dir: &Path, cmd: &mut Option<FolderCmd>) {
+    let fits = |from: &PathBuf| from.parent() != Some(dir) && !dir.starts_with(from);
+    if header.dnd_hover_payload::<PathBuf>().is_some_and(|f| fits(&f)) {
+        ui.painter().rect_stroke(header.rect.expand(2.0), 4.0, egui::Stroke::new(1.5, ui.visuals().selection.stroke.color), egui::StrokeKind::Outside);
+    }
+    if let Some(from) = header.dnd_release_payload::<PathBuf>().filter(|f| fits(f)) {
+        *cmd = Some(FolderCmd::Move((*from).clone(), dir.to_path_buf()));
+    }
+}
+
+/// Lets a file or folder of Modules or Content be dragged onto a folder.
+pub fn drag_source(r: &egui::Response, path: &Path) -> egui::Response {
+    let r = r.interact(egui::Sense::drag());
+    r.dnd_set_drag_payload(path.to_path_buf());
+    r
 }
 
 /// The context menu of the Modules and Content sections and of each folder in them.
@@ -99,6 +121,10 @@ pub fn folder_menu(ui: &mut egui::Ui, area: Area, rel: &str, dir: Option<&Path>,
         ui.close();
     }
     if let Some(dir) = dir {
+        if ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, "Rename…"))).clicked() {
+            *cmd = Some(FolderCmd::Rename(dir.to_path_buf()));
+            ui.close();
+        }
         let empty = fs::read_dir(dir).is_ok_and(|mut r| r.next().is_none());
         let remove = ui.add_enabled(empty, egui::Button::new(ic(ICON_DELETE, "Delete folder"))).on_disabled_hover_text("Only an empty folder can be deleted");
         if remove.clicked() {
@@ -123,6 +149,8 @@ pub fn folder_tree(ui: &mut egui::Ui, area: Area, dir: &Path, root: &Path, dirs:
     for sub in &subs {
         let inside: Vec<&Entry> = entries.iter().filter(|e| e.path.starts_with(sub)).copied().collect();
         let (_, header) = group(ui, ICON_FOLDER, &folder_name(sub), inside.len(), true, None, |ui| folder_tree(ui, area, sub, root, dirs, &inside, files, cmd));
+        let header = drag_source(&header, sub);
+        drop_target(ui, &header, sub, cmd);
         header.context_menu(|ui| folder_menu(ui, area, &rel_folder(root, sub), Some(sub), cmd));
     }
     let here: Vec<&Entry> = entries.iter().filter(|e| e.path.parent() == Some(dir)).copied().collect();
@@ -303,6 +331,9 @@ impl App {
                                 ui.selectable_label(open, (icon.rich_text().color(color), RichText::new(&e.id).strong(), title))
                             };
                             let rel = v.project.rel(&e.path);
+                            let movable = ops::movable(&v.project, &e.path);
+                            let in_area = Area::ALL.iter().any(|a| e.path.starts_with(v.project.mwp.join(a.dir())));
+                            let r = if movable && in_area { drag_source(&r, &e.path) } else { r };
                             let r = r.on_hover_text(&rel);
                             // Content that is not text opens in the system's app, not in the editor.
                             let external = e.path.starts_with(v.project.mwp.join("content")) && !TEXT_FILES.contains(&extension(&e.path).as_str());
@@ -332,6 +363,10 @@ impl App {
                                     ui.ctx().copy_text(rel.clone());
                                     ui.close();
                                 }
+                                if movable && ui.add(egui::Button::new(ic(ICON_DRIVE_FILE_RENAME_OUTLINE, "Rename…")).shortcut_text("F2")).clicked() {
+                                    ask.rename = Some(e.path.clone());
+                                    ui.close();
+                                }
                                 if ops::deletable(&v.project, &e.path) && ui.button(ic(ICON_DELETE, "Delete…")).clicked() {
                                     ask.ask_delete = Some(e.path.clone());
                                     ui.close();
@@ -358,6 +393,7 @@ impl App {
                         None => group(ui, *icon, label, entries.len(), true, add, |ui| flat(ui, entries, &mut files)),
                     };
                     if let Some(area) = area {
+                        drop_target(ui, &header, &v.project.mwp.join(area.dir()), &mut ask.folder_cmd);
                         header.context_menu(|ui| folder_menu(ui, area, "", None, &mut ask.folder_cmd));
                     }
                     if plus {
@@ -378,5 +414,12 @@ impl App {
                 ask.new_task |= plus;
             });
         });
+        // What is being dragged follows the pointer.
+        if let (Some(path), Some(pointer)) = (egui::DragAndDrop::payload::<PathBuf>(ui.ctx()), ui.ctx().pointer_latest_pos()) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            egui::Area::new(egui::Id::unique("dragged-file")).order(egui::Order::Tooltip).interactable(false).fixed_pos(pointer + egui::vec2(12.0, 8.0)).show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(folder_name(&path)));
+            });
+        }
     }
 }
