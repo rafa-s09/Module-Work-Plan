@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="pt-BR" data-lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MWP Guide</title>
+<meta name="description" content="Module Work Plan: install, first project, CLI vs GUI and the task workflow, step by step.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="../assets/icone/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --navy: #202B3C;
+    --orange: #E4572E;
+    --blue: #2C7BB6;
+
+    --bg: #F6F7F9;
+    --surface: #FFFFFF;
+    --surface-2: #EEF1F5;
+    --text: #1C2430;
+    --muted: #5B6676;
+    --line: #DCE1E8;
+    --accent: var(--blue);
+    --accent-soft: #E3EEF8;
+    --brand: var(--orange);
+    --brand-soft: #FCE9E3;
+    --code-bg: #F0F2F6;
+    --code-text: #1C2430;
+    --ok: #2E8B57;
+    --warn: #B7791F;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 16px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161A21;
+      --surface: #1D222B;
+      --surface-2: #252B36;
+      --text: #E6EAF0;
+      --muted: #9AA5B4;
+      --line: #313846;
+      --accent: #5AA7DE;
+      --accent-soft: #1E3346;
+      --brand: #F07A55;
+      --brand-soft: #3A2620;
+      --code-bg: #12161C;
+      --code-text: #DCE3EC;
+      --ok: #5CC28A;
+      --warn: #E0B055;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161A21;
+    --surface: #1D222B;
+    --surface-2: #252B36;
+    --text: #E6EAF0;
+    --muted: #9AA5B4;
+    --line: #313846;
+    --accent: #5AA7DE;
+    --accent-soft: #1E3346;
+    --brand: #F07A55;
+    --brand-soft: #3A2620;
+    --code-bg: #12161C;
+    --code-text: #DCE3EC;
+    --ok: #5CC28A;
+    --warn: #E0B055;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, kbd { font-family: ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", Menlo, monospace; }
+  :not(pre) > code {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: .08em .38em;
+    font-size: .9em;
+    /* Long paths and commands wrap on narrow screens instead of widening the page. */
+    overflow-wrap: anywhere;
+  }
+  kbd {
+    display: inline-block;
+    min-width: 1.6em;
+    padding: .05em .45em;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: .82em;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* Language: only the blocks of the chosen one show. */
+  html[data-lang="pt"] .en, html[data-lang="en"] .pt { display: none !important; }
+
+  /* Top bar */
+  .top {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    height: 60px; padding: 0 16px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .top .logo { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 700; letter-spacing: .2px; }
+  .top .logo img { width: 30px; height: 30px; }
+  .top .logo span small { font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .top .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+  .seg button {
+    border: 0; background: transparent; color: var(--muted);
+    font: inherit; font-size: 13px; font-weight: 600;
+    padding: 5px 11px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .menu-btn { display: none; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
+  nav.side {
+    position: sticky; top: 60px; align-self: start;
+    height: calc(100vh - 60px); overflow: auto;
+    padding: 24px 12px 24px 16px;
+    border-right: 1px solid var(--line);
+  }
+  nav.side p { margin: 0 0 8px 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  nav.side a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 8px;
+    color: var(--text); font-size: 14.5px;
+  }
+  nav.side a:hover { background: var(--surface-2); text-decoration: none; }
+  nav.side a.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  nav.side a .n {
+    flex: none; width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 11.5px; font-weight: 700;
+    background: var(--surface-2); color: var(--muted);
+  }
+  nav.side a.on .n { background: var(--accent); color: #fff; }
+  main { padding: 8px 40px 80px; min-width: 0; }
+
+  /* Hero */
+  .hero {
+    display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 28px; align-items: center;
+    margin: 28px 0 8px; padding: 32px;
+    border-radius: 18px;
+    background:
+      radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand) 22%, transparent) 0%, transparent 55%),
+      linear-gradient(135deg, var(--navy), #2B3A52);
+    color: #F3F6FA;
+    box-shadow: var(--shadow);
+  }
+  .hero h1 { margin: 0 0 8px; font-size: clamp(28px, 4.2vw, 40px); line-height: 1.15; letter-spacing: -.5px; }
+  .hero h1 em { font-style: normal; color: #FF9C7C; }
+  .hero p { margin: 0 0 18px; color: #C9D3E1; font-size: 17px; max-width: 54ch; }
+  .hero img { width: 100%; max-width: 220px; justify-self: end; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, .35)); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 13px; padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .18); color: #E8EEF6; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 10px;
+    background: var(--orange); color: #fff; font-weight: 600; font-size: 15px;
+    border: 0; cursor: pointer;
+  }
+  .btn:hover { text-decoration: none; filter: brightness(1.06); }
+  .btn.ghost { background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .22); }
+  .hero .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+  /* Sections */
+  section { padding-top: 40px; }
+  section > h2 {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 0 6px; font-size: 26px; letter-spacing: -.3px;
+  }
+  section > h2 .n {
+    flex: none; width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 15px;
+    background: var(--brand-soft); color: var(--brand);
+  }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 16.5px; }
+  h3 { font-size: 18px; margin: 26px 0 8px; }
+  p { margin: 0 0 12px; }
+  ul, ol { padding-left: 1.3em; margin: 0 0 12px; }
+  li { margin: 4px 0; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px; box-shadow: var(--shadow); min-width: 0;
+  }
+  .card h4 { margin: 0 0 6px; font-size: 16.5px; display: flex; align-items: center; gap: 8px; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+  .card .tag { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+  .card.brand { border-top: 3px solid var(--brand); }
+  .card.accent { border-top: 3px solid var(--accent); }
+  .ico { width: 20px; height: 20px; flex: none; }
+
+  /* Code blocks with a copy button */
+  .code { position: relative; margin: 10px 0 14px; }
+  .code pre {
+    margin: 0; padding: 14px 16px; padding-right: 64px;
+    background: var(--code-bg); color: var(--code-text);
+    border: 1px solid var(--line); border-radius: 12px;
+    overflow-x: auto; font-size: 14px; line-height: 1.55;
+  }
+  .code .c { color: var(--muted); }
+  .code .p { color: var(--brand); user-select: none; }
+  .copy {
+    position: absolute; top: 8px; right: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    border-radius: 7px; padding: 3px 9px; font: 600 12px system-ui, sans-serif; cursor: pointer;
+  }
+  .copy:hover { color: var(--text); }
+  .copy.done { color: var(--ok); border-color: var(--ok); }
+
+  /* Tabs (operating system) */
+  .tabs { margin: 12px 0; }
+  .tabs [role="tablist"] { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  .tabs [role="tab"] {
+    border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; font-size: 14.5px;
+    padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs [role="tabpanel"] { padding-top: 6px; }
+  .tabs [role="tabpanel"][hidden] { display: none; }
+
+  /* Callouts */
+  .note {
+    display: flex; gap: 12px; align-items: flex-start;
+    margin: 14px 0; padding: 12px 16px;
+    background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 12px; font-size: 15px;
+  }
+  .note.warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .note .ico { margin-top: 3px; color: var(--accent); }
+  .note.warn .ico { color: var(--warn); }
+  .note p:last-child { margin: 0; }
+
+  /* Steps */
+  .steps { list-style: none; padding: 0; margin: 16px 0; counter-reset: s; }
+  .steps > li {
+    position: relative; counter-increment: s;
+    padding: 0 0 22px 52px; margin: 0;
+  }
+  .steps > li::before {
+    content: counter(s);
+    position: absolute; left: 0; top: 0;
+    width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 15px;
+  }
+  .steps > li::after {
+    content: ""; position: absolute; left: 16px; top: 38px; bottom: 4px;
+    width: 2px; background: var(--line);
+  }
+  .steps > li:last-child::after { display: none; }
+  .steps > li > strong:first-child { display: block; font-size: 17px; margin: 4px 0 4px; }
+  .both { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+  .both > div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14.5px; min-width: 0; }
+  .both > div > b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+  .both pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13.5px; background: none; border: 0; padding: 0; }
+
+  /* Tables */
+  .table { overflow-x: auto; margin: 12px 0 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--surface-2); font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+
+  /* File tree */
+  .tree { font-size: 14px; }
+  .tree .c { color: var(--muted); }
+  .tree .d { color: var(--accent); }
+
+  /* GUI mockup, drawn in CSS so it follows the page theme */
+  .mock { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); background: var(--surface); margin: 16px 0; font-size: 12.5px; }
+  .mock .bar { display: flex; gap: 14px; padding: 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); color: var(--muted); }
+  .mock .bar b { color: var(--text); font-weight: 600; }
+  .mock .body { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 230px; }
+  .mock .tree-col { border-right: 1px solid var(--line); padding: 10px; color: var(--muted); }
+  .mock .tree-col div { padding: 2px 4px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mock .tree-col .on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .mock .tree-col .h { color: var(--text); font-weight: 600; margin-top: 6px; }
+  .mock .board { padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-content: start; }
+  .mock .col h5 { margin: 0 0 6px; font-size: 12px; color: var(--text); display: flex; gap: 5px; align-items: center; }
+  .mock .col h5 i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .mock .tcard { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; background: var(--bg); }
+  .mock .tcard b { display: block; font-size: 12px; color: var(--text); }
+  .mock .tcard span { color: var(--muted); font-size: 11.5px; }
+  .mock .status { padding: 5px 12px; border-top: 1px solid var(--line); background: var(--surface-2); color: var(--muted); display: flex; gap: 14px; }
+
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  footer img { width: 22px; height: 22px; }
+
+  /* Phone and narrow windows */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.side {
+      display: none; position: fixed; top: 60px; left: 0; right: 0; height: auto; max-height: calc(100vh - 60px);
+      background: var(--surface); border-right: 0; border-bottom: 1px solid var(--line); z-index: 15; box-shadow: var(--shadow);
+    }
+    nav.side.open { display: block; }
+    .menu-btn { display: inline-block; }
+    main { padding: 4px 16px 64px; }
+    .hero { grid-template-columns: 1fr; padding: 24px; }
+    .hero img { justify-self: center; max-width: 150px; grid-row: 1; }
+    .grid2, .grid3, .both { grid-template-columns: 1fr; }
+    .mock .body { grid-template-columns: 1fr; }
+    .mock .tree-col { display: none; }
+    .mock .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .top .logo span small { display: none; }
+  }
+  @media (max-width: 480px) {
+    .top { gap: 8px; padding: 0 10px; }
+    .top .logo span { display: none; }
+    .seg button { padding: 5px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="side">
+    <span class="pt">Seções</span><span class="en">Sections</span>
+  </button>
+  <a class="logo" href="#top">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../assets/icone/icon-dark.svg">
+      <img id="logoImg" src="../assets/icone/icon.svg" alt="">
+    </picture>
+    <span>MWP <small class="pt">Guia passo a passo</small><small class="en">Step-by-step guide</small></span>
+  </a>
+  <div class="spacer"></div>
+  <div class="seg" role="group" aria-label="Language / Idioma">
+    <button data-set-lang="pt" aria-pressed="true">PT</button>
+    <button data-set-lang="en" aria-pressed="false">EN</button>
+  </div>
+  <div class="seg" role="group" aria-label="Theme / Tema">
+    <button data-set-theme="system" aria-pressed="true" title="System / Sistema">◐</button>
+    <button data-set-theme="light" aria-pressed="false" title="Light / Claro">☀</button>
+    <button data-set-theme="dark" aria-pressed="false" title="Dark / Escuro">☾</button>
+  </div>
+</header>
+
+<div class="layout" id="top">
+  <nav class="side" id="side" aria-label="Sections">
+    <p class="pt">Neste guia</p><p class="en">In this guide</p>
+    <a href="#what"><span class="n">1</span><span class="pt">O que é o MWP</span><span class="en">What MWP is</span></a>
+    <a href="#install"><span class="n">2</span><span class="pt">Instalar</span><span class="en">Install</span></a>
+    <a href="#first"><span class="n">3</span><span class="pt">Primeiro projeto</span><span class="en">First project</span></a>
+    <a href="#cli-gui"><span class="n">4</span><span class="pt">CLI ou GUI?</span><span class="en">CLI or GUI?</span></a>
+    <a href="#workflow"><span class="n">5</span><span class="pt">Uma task, do início ao fim</span><span class="en">A task, start to finish</span></a>
+    <a href="#gui"><span class="n">6</span><span class="pt">Tour da GUI</span><span class="en">GUI tour</span></a>
+    <a href="#agents"><span class="n">7</span><span class="pt">Vários agentes</span><span class="en">Several agents</span></a>
+    <a href="#local"><span class="n">8</span><span class="pt">Agente local (LM Studio)</span><span class="en">Local agent (LM Studio)</span></a>
+    <a href="#reference"><span class="n">9</span><span class="pt">Referência rápida</span><span class="en">Quick reference</span></a>
+    <a href="#trouble"><span class="n">10</span><span class="pt">Problemas comuns</span><span class="en">Troubleshooting</span></a>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1 class="pt">Documentação modular para <em>agentes de IA</em></h1>
+        <h1 class="en">Modular documentation for <em>AI agents</em></h1>
+        <p class="pt">O Module Work Plan descreve o sistema por <b>módulo</b> e registra cada mudança numa <b>task</b> pequena, que diz exatamente o que o agente precisa ler. Este guia leva você da instalação à primeira task fechada.</p>
+        <p class="en">Module Work Plan describes the system by <b>module</b> and records each change in a small <b>task</b> that says exactly what the agent needs to read. This guide takes you from installing to your first closed task.</p>
+        <div class="chips">
+          <span class="chip">CLI <code style="background:none;border:0;color:inherit;padding:0">mwp</code></span>
+          <span class="chip">GUI <code style="background:none;border:0;color:inherit;padding:0">mwp-gui</code></span>
+          <span class="chip">Claude Code · Codex · Cursor · Gemini · Copilot</span>
+          <span class="chip">Rust · Apache-2.0</span>
+        </div>
+        <div class="actions">
+          <a class="btn" href="#install"><span class="pt">Começar</span><span class="en">Get started</span> →</a>
+          <a class="btn ghost" href="#cli-gui"><span class="pt">CLI ou GUI?</span><span class="en">CLI or GUI?</span></a>
+        </div>
+      </div>
+      <img src="../assets/icone/help_art.png" alt="MWP mascot">
+    </div>
+
+    <!-- 1 -->
+    <section id="what">
+      <h2><span class="n">1</span><span class="pt">O que é o MWP</span><span class="en">What MWP is</span></h2>
+      <p class="lead pt">Em vez de entregar uma pilha de documentos ao agente a cada pequena mudança, o MWP separa <b>como o sistema é hoje</b> de <b>o que muda</b>.</p>
+      <p class="lead en">Instead of handing the agent a pile of documents for every small change, MWP separates <b>how the system is today</b> from <b>what changes</b>.</p>
+
+      <div class="grid2">
+        <div class="card accent">
+          <span class="tag pt">Módulo</span><span class="tag en">Module</span>
+          <h4 class="pt">Como uma parte funciona hoje</h4><h4 class="en">How a part works today</h4>
+          <p class="pt">Regras (<code>FR-01</code>), os testes que as guardam, contratos e armadilhas. Atualizado a cada mudança, nunca acumula histórico.</p>
+          <p class="en">Rules (<code>FR-01</code>), the tests that guard them, contracts and pitfalls. Updated with every change, it never piles up history.</p>
+        </div>
+        <div class="card brand">
+          <span class="tag pt">Task</span><span class="tag en">Task</span>
+          <h4 class="pt">O que muda, numa unidade pequena</h4><h4 class="en">What changes, in one small unit</h4>
+          <p class="pt">Objetivo, escopo, critérios de aceite e os módulos que pode ler e alterar. Imutável depois de concluída.</p>
+          <p class="en">Goal, scope, acceptance criteria and the modules it may read and write. Immutable once done.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <p class="pt"><b>Nasce na task, vive no módulo.</b> Tudo o que continua verdade depois que a task fecha vai para o módulo antes de ela ser concluída. Para executar uma task, o agente lê a <b>constituição</b>, a <b>task</b> e os <b>módulos que ela lista</b>, normalmente de 1 a 3.</p>
+        <p class="en"><b>Born in the task, lives in the module.</b> Anything still true after a task closes goes into the module before the task is done. To run a task, the agent reads the <b>constitution</b>, the <b>task</b> and the <b>modules it lists</b>, usually 1 to 3.</p>
+      </div>
+
+      <h3 class="pt">A pasta <code>mwp/</code></h3><h3 class="en">The <code>mwp/</code> folder</h3>
+      <div class="code tree"><pre><span class="d">mwp/</span>
+├── PROJECT.md        <span class="c pt"># visão geral curta: stack, comandos</span><span class="c en"># short overview: stack, commands</span>
+├── constitution.md   <span class="c pt"># regras do agente: o que ler, o que pode, quando parar</span><span class="c en"># agent rules: what to read, what is allowed, when to stop</span>
+├── map.md            <span class="c pt"># índice gerado dos módulos</span><span class="c en"># generated index of modules</span>
+├── glossary.md       <span class="c pt"># termos do domínio (opcional)</span><span class="c en"># domain terms (optional)</span>
+├── <span class="d">modules/</span>          <span class="c pt"># o sistema como é hoje</span><span class="c en"># the system as it is today</span>
+├── <span class="d">tasks/open/</span>       <span class="c">T-0043-order-discount.md</span>
+├── <span class="d">tasks/done/</span>       <span class="c pt"># tasks concluídas, nunca editadas</span><span class="c en"># finished tasks, never edited</span>
+├── <span class="d">specs/</span>            <span class="c pt"># SP-0003: especificações grandes demais para um módulo</span><span class="c en"># SP-0003: specs too big for a module</span>
+├── <span class="d">decisions/</span>        <span class="c pt"># ADR-0002: por que uma escolha foi feita</span><span class="c en"># ADR-0002: why a choice was made</span>
+└── <span class="d">content/</span>          <span class="c pt"># opcional: ícones, imagens, arquivos de design</span><span class="c en"># optional: icons, images, design files</span></pre></div>
+      <p class="pt">Quando as fontes discordam, a prioridade é <b>constituição &gt; ADRs aceitos &gt; módulo &gt; task</b>. Se uma task contradiz uma regra, o agente para e pergunta.</p>
+      <p class="en">When sources disagree, the priority is <b>constitution &gt; accepted ADRs &gt; module &gt; task</b>. If a task contradicts a rule, the agent stops and asks.</p>
+    </section>
+
+    <!-- 2 -->
+    <section id="install">
+      <h2><span class="n">2</span><span class="pt">Instalar</span><span class="en">Install</span></h2>
+      <p class="lead pt">Você precisa do <a href="https://rustup.rs">Rust</a> (1.85+ para o CLI, 1.95+ para a GUI) e de um clone deste repositório.</p>
+      <p class="lead en">You need <a href="https://rustup.rs">Rust</a> (1.85+ for the CLI, 1.95+ for the GUI) and a checkout of this repository.</p>
+
+      <ol class="steps">
+        <li>
+          <strong class="pt">Rode o instalador na pasta do repositório</strong><strong class="en">Run the installer from the repository folder</strong>
+          <p class="pt">Acrescente <code>--gui</code> (no Windows, <code>-Gui</code>) para instalar também o editor <code>mwp-gui</code>. Sem a opção, só o CLI <code>mwp</code> é instalado.</p>
+          <p class="en">Add <code>--gui</code> (Windows: <code>-Gui</code>) to also install the <code>mwp-gui</code> editor. Without it, only the <code>mwp</code> CLI is installed.</p>
+          <div class="tabs" data-tabs>
+            <div role="tablist">
+              <button role="tab" aria-selected="true" data-os="win">Windows</button>
+              <button role="tab" aria-selected="false" data-os="unix">Linux / macOS</button>
+            </div>
+            <div role="tabpanel" data-os="win">
+              <div class="code"><pre><span class="p">PS&gt; </span>.\src\install.ps1 -Gui</pre></div>
+              <p class="pt">Se o PowerShell bloquear scripts:</p><p class="en">If PowerShell blocks scripts:</p>
+              <div class="code"><pre><span class="p">PS&gt; </span>powershell -ExecutionPolicy Bypass -File .\src\install.ps1 -Gui</pre></div>
+            </div>
+            <div role="tabpanel" data-os="unix" hidden>
+              <div class="code"><pre><span class="p">$ </span>./src/install.sh --gui</pre></div>
+            </div>
+          </div>
+        </li>
+        <li>
+          <strong class="pt">Confira</strong><strong class="en">Check it</strong>
+          <div class="code"><pre><span class="p">$ </span>mwp --version</pre></div>
+          <p class="pt">Os scripts avisam se a pasta de instalação do cargo não estiver no <code>PATH</code>; adicione-a para usar <code>mwp</code> e <code>mwp-gui</code> de qualquer lugar.</p>
+          <p class="en">The scripts warn if cargo's install folder is not on your <code>PATH</code>; add it to run <code>mwp</code> and <code>mwp-gui</code> from anywhere.</p>
+        </li>
+        <li>
+          <strong class="pt">Já quer criar um projeto junto? Passe a pasta</strong><strong class="en">Want a project right away? Pass its folder</strong>
+          <div class="code"><pre><span class="p">$ </span>./src/install.sh --gui ../minha-loja</pre></div>
+          <p class="pt">O instalador roda o <code>mwp init</code> nela depois de instalar.</p>
+          <p class="en">The installer runs <code>mwp init</code> there after installing.</p>
+        </li>
+      </ol>
+
+      <div class="note">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        <p class="pt">Sem os scripts, é o mesmo que <code>cargo install --path src/client --locked</code> (e <code>src/gui</code> para a GUI). Os templates e as skills ficam dentro do binário: rode o instalador de novo depois de mudar <code>templates/</code> ou <code>src/skill/</code>.</p>
+        <p class="en">Without the scripts it is <code>cargo install --path src/client --locked</code> (and <code>src/gui</code> for the GUI). Templates and skills are built into the binary: run the installer again after changing <code>templates/</code> or <code>src/skill/</code>.</p>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="first">
+      <h2><span class="n">3</span><span class="pt">Primeiro projeto</span><span class="en">First project</span></h2>
+      <p class="lead pt">O <code>mwp init</code> cria a estrutura e os arquivos de cada agente, sem nunca sobrescrever nada.</p>
+      <p class="lead en"><code>mwp init</code> creates the structure and each agent's files, never overwriting anything.</p>
+
+      <div class="grid2">
+        <div class="card">
+          <h4>CLI</h4>
+          <div class="code"><pre><span class="p">$ </span>cd minha-loja
+<span class="p">$ </span>mwp init --name "Loja" --agent claude,codex</pre></div>
+          <p class="pt">Sem <code>--agent</code>, ele pergunta quais agentes você usa (Claude Code por padrão).</p>
+          <p class="en">Without <code>--agent</code>, it asks which agents you use (Claude Code by default).</p>
+        </div>
+        <div class="card">
+          <h4>GUI</h4>
+          <p class="pt"><b>File &gt; New project…</b>: escolha a pasta, o nome, os agentes e se quer as skills. Ela abre o <code>PROJECT.md</code> no fim.</p>
+          <p class="en"><b>File &gt; New project…</b>: pick the folder, the name, the agents and whether to install the skills. It opens <code>PROJECT.md</code> at the end.</p>
+          <p class="pt">Projetos recentes aparecem na tela inicial e em <b>File &gt; Open project…</b>.</p>
+          <p class="en">Recent projects show on the start screen and in <b>File &gt; Open project…</b>.</p>
+        </div>
+      </div>
+
+      <h3 class="pt">Depois do init</h3><h3 class="en">After init</h3>
+      <ol class="steps">
+        <li><strong class="pt">Preencha o projeto</strong><strong class="en">Fill in the project</strong>
+          <p class="pt"><code>mwp/PROJECT.md</code> (stack, comandos) e os <code>&lt;placeholders&gt;</code> de <code>mwp/constitution.md</code>.</p>
+          <p class="en"><code>mwp/PROJECT.md</code> (stack, commands) and the <code>&lt;placeholders&gt;</code> in <code>mwp/constitution.md</code>.</p></li>
+        <li><strong class="pt">Documente o primeiro módulo</strong><strong class="en">Document the first module</strong>
+          <p class="pt">Peça ao agente: <i>"Use a skill module para criar os módulos deste projeto"</i>, ou crie um com <code>mwp module new order --summary "Pedidos"</code> (na GUI: <b>+</b> em Modules). Depois rode <code>mwp remap</code>.</p>
+          <p class="en">Ask the agent: <i>"Use the module skill to create the modules for this project"</i>, or create one with <code>mwp module new order --summary "Orders"</code> (GUI: <b>+</b> on Modules). Then run <code>mwp remap</code>.</p></li>
+        <li><strong class="pt">Crie uma task</strong><strong class="en">Create a task</strong>
+          <div class="code"><pre><span class="p">$ </span>mwp task new "Desconto por volume" --modules order</pre></div></li>
+        <li><strong class="pt">Peça ao agente</strong><strong class="en">Ask the agent</strong>
+          <p class="pt"><i>"Execute a task T-0001"</i>. A skill do MWP ensina o resto: carregar o contexto, reservar a task, implementar e fechar com evidências.</p>
+          <p class="en"><i>"Execute task T-0001"</i>. The MWP skill teaches the rest: load the context, claim the task, implement, close with evidence.</p></li>
+      </ol>
+    </section>
+
+    <!-- 4 -->
+    <section id="cli-gui">
+      <h2><span class="n">4</span><span class="pt">CLI ou GUI?</span><span class="en">CLI or GUI?</span></h2>
+      <p class="lead pt">Os dois usam o mesmo core e os mesmos arquivos: dá para alternar à vontade, e ambos são opcionais (tudo pode ser feito à mão seguindo os templates).</p>
+      <p class="lead en">Both use the same core and the same files: switch freely. Both are optional (everything can be done by hand following the templates).</p>
+
+      <div class="grid2">
+        <div class="card accent">
+          <h4><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg> <code style="border:0;background:none;padding:0">mwp</code> — CLI</h4>
+          <p class="pt"><b>Para os agentes e para scripts.</b> É o que a skill manda o agente usar: <code>context</code>, <code>task start</code>, <code>task close</code>, <code>lint</code>. Também serve para CI.</p>
+          <p class="en"><b>For agents and scripts.</b> It is what the skill tells the agent to use: <code>context</code>, <code>task start</code>, <code>task close</code>, <code>lint</code>. Also good for CI.</p>
+          <ul class="pt"><li>Sem dependências, um binário só</li><li>Saída de texto, código de saída para automação</li><li><code>mwp lint --strict</code> num pipeline</li></ul>
+          <ul class="en"><li>No dependencies, a single binary</li><li>Text output, exit codes for automation</li><li><code>mwp lint --strict</code> in a pipeline</li></ul>
+        </div>
+        <div class="card brand">
+          <h4><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg> <code style="border:0;background:none;padding:0">mwp-gui</code> — GUI</h4>
+          <p class="pt"><b>Para a pessoa que acompanha o trabalho.</b> Ver o quadro, revisar e editar documentos, decidir ADRs e acompanhar os agentes enquanto trabalham.</p>
+          <p class="en"><b>For the person following the work.</b> See the board, review and edit documents, decide ADRs and watch agents as they work.</p>
+          <ul class="pt"><li>Relê o projeto a cada 2 segundos</li><li>Editor de Markdown com prévia</li><li>Inglês ou português, tema claro ou escuro</li></ul>
+          <ul class="en"><li>Rereads the project every 2 seconds</li><li>Markdown editor with preview</li><li>English or Portuguese, light or dark theme</li></ul>
+        </div>
+      </div>
+
+      <div class="table"><table>
+        <thead><tr><th class="pt">Quero…</th><th class="en">I want to…</th><th>CLI</th><th>GUI</th></tr></thead>
+        <tbody>
+          <tr><td class="pt">Criar uma task</td><td class="en">Create a task</td><td><code>mwp task new "…"</code></td><td><b>+</b> Tasks &gt; Open · <b>File</b> &gt; New task</td></tr>
+          <tr><td class="pt">Ver o que um agente carrega</td><td class="en">See what an agent loads</td><td><code>mwp context T-0001</code></td><td class="pt">Botão <b>Context</b> no cabeçalho da task</td><td class="en"><b>Context</b> button in the task header</td></tr>
+          <tr><td class="pt">Iniciar / liberar / fechar</td><td class="en">Start / release / close</td><td><code>mwp task start|release|close</code></td><td class="pt">Botões no cabeçalho, ou arrastar o cartão no quadro</td><td class="en">Header buttons, or drag the card on the board</td></tr>
+          <tr><td class="pt">Ver quem trabalha em quê</td><td class="en">See who works on what</td><td><code>mwp locks</code></td><td class="pt">Seção <b>Agents at work</b></td><td class="en"><b>Agents at work</b> section</td></tr>
+          <tr><td class="pt">Conferir o projeto</td><td class="en">Check the project</td><td><code>mwp lint</code></td><td class="pt">Painel <b>Problems</b></td><td class="en"><b>Problems</b> panel</td></tr>
+          <tr><td class="pt">Atualizar o mapa</td><td class="en">Refresh the map</td><td><code>mwp remap</code></td><td class="pt">Botão <b>Update map.md</b></td><td class="en"><b>Update map.md</b> button</td></tr>
+          <tr><td class="pt">Aceitar um ADR</td><td class="en">Accept an ADR</td><td class="pt">— (só uma pessoa decide)</td><td class="en">— (only a person decides)</td><td class="pt"><b>Accept</b> / <b>Reject</b> no cabeçalho</td><td class="en"><b>Accept</b> / <b>Reject</b> in the header</td></tr>
+          <tr><td class="pt">Adicionar agentes ao projeto</td><td class="en">Add agents to a project</td><td><code>mwp init --agent codex</code></td><td><b>File</b> &gt; Project agents…</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 5 -->
+    <section id="workflow">
+      <h2><span class="n">5</span><span class="pt">Uma task, do início ao fim</span><span class="en">A task, start to finish</span></h2>
+      <p class="lead pt">O ciclo que o agente segue, com o que cada passo faz e onde você acompanha na GUI.</p>
+      <p class="lead en">The cycle the agent follows, what each step does and where you follow it in the GUI.</p>
+
+      <ol class="steps">
+        <li><strong class="pt">Criar e descrever</strong><strong class="en">Create and describe</strong>
+          <p class="pt">Preencha <b>Goal</b>, <b>Scope</b> e os <b>critérios de aceite</b>. Cada critério diz como é verificado: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Tamanhos: <b>S</b> (curta), <b>M</b> (testes antes), <b>L</b> (plano aprovado por uma pessoa antes de implementar).</p>
+          <p class="en">Fill in <b>Goal</b>, <b>Scope</b> and the <b>acceptance criteria</b>. Each criterion says how it is verified: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Sizes: <b>S</b> (short), <b>M</b> (tests first), <b>L</b> (a plan a person approves before implementing).</p>
+          <div class="both"><div><b>CLI</b><pre>mwp task new "Desconto" --size M --modules order</pre></div><div><b>GUI</b><span class="pt">Nova task, no quadro ou no explorador</span><span class="en">New task, on the board or in the explorer</span></div></div></li>
+        <li><strong class="pt">Carregar o contexto</strong><strong class="en">Load the context</strong>
+          <p class="pt">Constituição, task e o que o front matter cita, com estimativa de tokens. <code>MISSING</code> = a task cita algo que não existe: o agente para e pergunta.</p>
+          <p class="en">Constitution, task and what its front matter cites, with a token estimate. <code>MISSING</code> = the task cites something that does not exist: the agent stops and asks.</p>
+          <div class="both"><div><b>CLI</b><pre>mwp context T-0001 --paths</pre></div><div><b>GUI</b><span class="pt">Botão Context (fica vermelho se faltar algo)</span><span class="en">Context button (turns red when something is missing)</span></div></div></li>
+        <li><strong class="pt">Reservar</strong><strong class="en">Claim</strong>
+          <p class="pt">Marca <code>in_progress</code> e bloqueia os módulos da task para esse agente. Se outro agente já os tiver, falha: nunca se contorna.</p>
+          <p class="en">Sets <code>in_progress</code> and locks the task's modules for that agent. If another agent holds them, it fails: never work around it.</p>
+          <div class="both"><div><b>CLI</b><pre>mwp task start T-0001 --agent claude</pre></div><div><b>GUI</b><span class="pt">Start, ou arrastar para In progress</span><span class="en">Start, or drag to In progress</span></div></div></li>
+        <li><strong class="pt">Implementar e verificar</strong><strong class="en">Implement and verify</strong>
+          <p class="pt">Só no código dos módulos da task. Cada critério com evidência; testes existentes são regras e não se mudam para passar.</p>
+          <p class="en">Only in the code of the task's modules. Every criterion with evidence; existing tests are rules and are never changed to pass.</p></li>
+        <li><strong class="pt">Atualizar os módulos</strong><strong class="en">Update the modules</strong>
+          <p class="pt">Regras novas, tabela de testes, <code>updated:</code> e a linha de changelog com o ID da task.</p>
+          <p class="en">New rules, the tests table, <code>updated:</code> and the changelog row with the task ID.</p>
+          <div class="both"><div><b>CLI</b><pre>mwp remap</pre></div><div><b>GUI</b><span class="pt">Update map.md, se o mapa ficou desatualizado</span><span class="en">Update map.md, when the map is stale</span></div></div></li>
+        <li><strong class="pt">Fechar</strong><strong class="en">Close</strong>
+          <p class="pt">Com o <code>## Closure</code> preenchido: marca <code>done</code>, move para <code>tasks/done/</code>, libera os bloqueios e roda o lint. Se um critério manual não pôde ser conferido, a task vai para <code>review</code>.</p>
+          <p class="en">With <code>## Closure</code> filled in: sets <code>done</code>, moves to <code>tasks/done/</code>, frees the locks and runs lint. If a manual criterion could not be checked, the task goes to <code>review</code>.</p>
+          <div class="both"><div><b>CLI</b><pre>mwp task close T-0001
+mwp task release T-0001 --status review</pre></div><div><b>GUI</b><span class="pt">Close, Status, ou arrastar para Done</span><span class="en">Close, Status, or drag to Done</span></div></div></li>
+      </ol>
+    </section>
+
+    <!-- 6 -->
+    <section id="gui">
+      <h2><span class="n">6</span><span class="pt">Tour da GUI</span><span class="en">GUI tour</span></h2>
+      <p class="lead pt">Rode <code>mwp-gui</code> dentro de um projeto, ou <code>mwp-gui caminho/do/projeto</code>.</p>
+      <p class="lead en">Run <code>mwp-gui</code> inside a project, or <code>mwp-gui path/to/project</code>.</p>
+
+      <div class="mock" aria-hidden="true">
+        <div class="bar"><b class="pt">Arquivo</b><b class="en">File</b><span class="pt">Editar</span><span class="en">Edit</span><span class="pt">Exibir</span><span class="en">View</span><span class="pt">Configurações</span><span class="en">Settings</span><span class="pt">Ajuda</span><span class="en">Help</span></div>
+        <div class="body">
+          <div class="tree-col">
+            <div class="on">▦ <span class="pt">Quadro</span><span class="en">Board</span></div>
+            <div class="h">▾ <span class="pt">Agentes trabalhando</span><span class="en">Agents at work</span></div>
+            <div>T-0002 · claude</div>
+            <div class="h">▾ <span class="pt">Módulos</span><span class="en">Modules</span></div>
+            <div>▸ billing</div><div>order</div>
+            <div class="h">▾ Tasks</div>
+            <div>▸ <span class="pt">Aberta</span><span class="en">Open</span></div>
+          </div>
+          <div class="board">
+            <div class="col"><h5><i style="background:var(--muted)"></i><span class="pt">Aberta</span><span class="en">Open</span></h5>
+              <div class="tcard"><b>T-0003</b><span class="pt">Cupom de frete</span><span class="en">Shipping coupon</span></div>
+              <div class="tcard"><b>T-0004</b><span class="pt">Recibo em PDF</span><span class="en">PDF receipt</span></div></div>
+            <div class="col"><h5><i style="background:var(--accent)"></i><span class="pt">Em andamento</span><span class="en">In progress</span></h5>
+              <div class="tcard"><b>T-0002</b><span class="pt">Desconto por volume</span><span class="en">Volume discount</span></div></div>
+            <div class="col"><h5><i style="background:var(--brand)"></i><span class="pt">Bloqueada</span><span class="en">Blocked</span></h5></div>
+            <div class="col"><h5><i style="background:var(--warn)"></i><span class="pt">Em revisão</span><span class="en">Review</span></h5>
+              <div class="tcard"><b>T-0001</b><span class="pt">Login</span><span class="en">Login</span></div></div>
+          </div>
+        </div>
+        <div class="status"><span>⓪ 0 ⚠ 0</span><span class="pt">1 em andamento</span><span class="en">1 in progress</span></div>
+      </div>
+
+      <div class="grid3">
+        <div class="card"><h4 class="pt">Explorador</h4><h4 class="en">Explorer</h4>
+          <p class="pt">Arquivos por seção, com subpastas. Botão direito: novo, renomear (<kbd>F2</kbd>), excluir, copiar caminho. Arraste arquivos entre pastas de Modules ou Content.</p>
+          <p class="en">Files by section, with subfolders. Right-click: new, rename (<kbd>F2</kbd>), delete, copy path. Drag files between folders of Modules or Content.</p></div>
+        <div class="card"><h4 class="pt">Editor</h4><h4 class="en">Editor</h4>
+          <p class="pt">Abas, código com destaque e prévia lado a lado. IDs viram links (<kbd>Ctrl</kbd>+clique no código). Avisa quando um agente muda o arquivo aberto e mostra as diferenças.</p>
+          <p class="en">Tabs, highlighted source and preview side by side. IDs become links (<kbd>Ctrl</kbd>+click in the source). Warns when an agent changes the open file and shows the differences.</p></div>
+        <div class="card"><h4 class="pt">Quadro</h4><h4 class="en">Board</h4>
+          <p class="pt">Uma coluna por status. Arraste um cartão para mudar o status; filtre por texto, módulo, agente e tamanho.</p>
+          <p class="en">One column per status. Drag a card to change its status; filter by text, module, agent and size.</p></div>
+      </div>
+
+      <h3 class="pt">Atalhos</h3><h3 class="en">Shortcuts</h3>
+      <div class="table"><table>
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd> <kbd>P</kbd></td><td class="pt">Ir para arquivo (nome, ID ou título)</td><td class="en">Go to file (name, ID or title)</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>F</kbd> · <kbd>Ctrl</kbd> <kbd>H</kbd></td><td class="pt">Buscar · substituir no arquivo</td><td class="en">Find · replace in the file</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>F</kbd></td><td class="pt">Buscar (e substituir) no projeto inteiro</td><td class="en">Find (and replace) in the whole project</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>S</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd></td><td class="pt">Salvar · salvar tudo</td><td class="en">Save · save all</td></tr>
+          <tr><td><kbd>Ctrl</kbd> <kbd>W</kbd> · <kbd>Ctrl</kbd> <kbd>Tab</kbd></td><td class="pt">Fechar aba · próxima aba</td><td class="en">Close tab · next tab</td></tr>
+          <tr><td><kbd>F2</kbd></td><td class="pt">Renomear o arquivo aberto</td><td class="en">Rename the open file</td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="note">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <p class="pt"><b>Settings &gt; Preferences</b>: idioma (inglês ou português; outros por arquivo JSON em <code>&lt;config&gt;/mwp-gui/lang/</code>), tema, tamanho e fonte do texto. A GUI lembra janela, painéis, abas e filtros de cada projeto.</p>
+        <p class="en"><b>Settings &gt; Preferences</b>: language (English or Portuguese; others through a JSON file in <code>&lt;config&gt;/mwp-gui/lang/</code>), theme, text size and font. The GUI remembers the window, panels, tabs and filters of each project.</p>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="agents">
+      <h2><span class="n">7</span><span class="pt">Vários agentes ao mesmo tempo</span><span class="en">Several agents at once</span></h2>
+      <p class="lead pt">O estado dos agentes fica em arquivos simples em <code>.mwp/</code>, então vários agentes (e a GUI) podem trabalhar no mesmo projeto.</p>
+      <p class="lead en">Agent state lives in plain files in <code>.mwp/</code>, so several agents (and the GUI) can work on one project.</p>
+      <div class="grid3">
+        <div class="card"><h4 class="pt">Reserva</h4><h4 class="en">Claim</h4><p class="pt">Uma task em andamento pertence a um agente (<code>.mwp/claims/</code>).</p><p class="en">A task in progress belongs to one agent (<code>.mwp/claims/</code>).</p></div>
+        <div class="card"><h4 class="pt">Bloqueio</h4><h4 class="en">Lock</h4><p class="pt">Um módulo tem um escritor por vez (<code>.mwp/locks/</code>). Outro agente que tente o mesmo módulo recebe um erro.</p><p class="en">A module has one writer at a time (<code>.mwp/locks/</code>). Another agent trying the same module gets an error.</p></div>
+        <div class="card"><h4 class="pt">IDs</h4><h4 class="en">IDs</h4><p class="pt"><code>mwp next T --reserve</code> grava o ID no <code>.mwp/ledger.json</code>, versionado: dois agentes nunca pegam o mesmo.</p><p class="en"><code>mwp next T --reserve</code> records the ID in the versioned <code>.mwp/ledger.json</code>: two agents never get the same one.</p></div>
+      </div>
+      <div class="note warn">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <p class="pt">Nunca edite <code>.mwp/</code> à mão. Se um agente parar no meio, libere a task (<code>mwp task release</code> ou o botão <b>Status</b>) para os módulos ficarem livres.</p>
+        <p class="en">Never edit <code>.mwp/</code> by hand. If an agent stops halfway, release the task (<code>mwp task release</code> or the <b>Status</b> button) so its modules are free again.</p>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="local">
+      <h2><span class="n">8</span><span class="pt">Agente local com LM Studio</span><span class="en">A local agent with LM Studio</span></h2>
+      <p class="lead pt">O LM Studio serve o modelo numa API compatível com a da OpenAI; quem lê arquivos e roda o <code>mwp</code> é um agente de linha de comando, como o Codex CLI, apontado para ela.</p>
+      <p class="lead en">LM Studio serves the model on an OpenAI-compatible API; a command-line agent such as Codex CLI, pointed at it, is what reads files and runs <code>mwp</code>.</p>
+      <ol class="steps">
+        <li><strong class="pt">No LM Studio</strong><strong class="en">In LM Studio</strong>
+          <p class="pt">Use um modelo com <b>tool calling</b>, aumente o tamanho de contexto e inicie o servidor local (por padrão em <code>http://localhost:1234/v1</code>).</p>
+          <p class="en">Use a model with <b>tool calling</b>, raise its context length and start the local server (by default at <code>http://localhost:1234/v1</code>).</p></li>
+        <li><strong class="pt">No Codex: <code>~/.codex/config.toml</code></strong><strong class="en">In Codex: <code>~/.codex/config.toml</code></strong>
+          <div class="code"><pre>[model_providers.lmstudio]
+name = "LM Studio"
+base_url = "http://localhost:1234/v1"
+
+[profiles.local]
+model_provider = "lmstudio"
+model = "<span class="c">identificador-do-modelo-no-lm-studio</span>"</pre></div></li>
+        <li><strong class="pt">No projeto</strong><strong class="en">In the project</strong>
+          <div class="code"><pre><span class="p">$ </span>mwp init --agent codex
+<span class="p">$ </span>codex --profile local</pre></div>
+          <p class="pt">E peça <i>"Execute a task T-0001"</i>. Comece com uma task pequena: modelos menores costumam pular passos do fluxo.</p>
+          <p class="en">Then ask <i>"Execute task T-0001"</i>. Start with a small task: smaller models tend to skip steps of the workflow.</p></li>
+      </ol>
+    </section>
+
+    <!-- 9 -->
+    <section id="reference">
+      <h2><span class="n">9</span><span class="pt">Referência rápida do CLI</span><span class="en">CLI quick reference</span></h2>
+      <div class="table"><table>
+        <thead><tr><th class="pt">Comando</th><th class="en">Command</th><th class="pt">O que faz</th><th class="en">What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>mwp init</code></td><td class="pt">Cria <code>mwp/</code> e os arquivos de cada agente; nunca sobrescreve</td><td class="en">Creates <code>mwp/</code> and each agent's files; never overwrites</td></tr>
+          <tr><td><code>mwp task new</code> · <code>task-list</code></td><td class="pt">Cria uma task com o próximo ID · lista as tasks</td><td class="en">Creates a task with the next ID · lists tasks</td></tr>
+          <tr><td><code>mwp task start|close|release</code></td><td class="pt">Reserva e bloqueia · fecha e roda o lint · devolve</td><td class="en">Claims and locks · closes and runs lint · gives back</td></tr>
+          <tr><td><code>mwp context T-0001</code></td><td class="pt">O que o agente lê, com estimativa de tokens</td><td class="en">What the agent reads, with a token estimate</td></tr>
+          <tr><td><code>mwp locks</code></td><td class="pt">Tasks em andamento, agentes e módulos bloqueados</td><td class="en">Tasks in progress, agents and locked modules</td></tr>
+          <tr><td><code>mwp next &lt;T|SP|ADR|TEST&gt;</code></td><td class="pt">Próximo ID livre (<code>--reserve</code> grava no ledger)</td><td class="en">Next free ID (<code>--reserve</code> records it in the ledger)</td></tr>
+          <tr><td><code>mwp module new</code> · <code>spec new</code> · <code>adr new</code></td><td class="pt">Cria módulo, SPEC ou ADR a partir do template</td><td class="en">Creates a module, SPEC or ADR from its template</td></tr>
+          <tr><td><code>mwp content add</code></td><td class="pt">Copia recursos para <code>mwp/content/</code></td><td class="en">Copies resources into <code>mwp/content/</code></td></tr>
+          <tr><td><code>mwp delete &lt;id&gt;</code></td><td class="pt">Apaga módulo, SPEC, task não concluída ou content (pede confirmação)</td><td class="en">Deletes a module, SPEC, task not done or content file (asks first)</td></tr>
+          <tr><td><code>mwp remap</code> · <code>map</code></td><td class="pt">Reconfere os módulos e regenera <code>map.md</code></td><td class="en">Rechecks modules and regenerates <code>map.md</code></td></tr>
+          <tr><td><code>mwp lint</code></td><td class="pt">Confere o projeto todo; código de saída 1 se houver erros</td><td class="en">Checks the whole project; exit code 1 on errors</td></tr>
+        </tbody>
+      </table></div>
+      <p class="pt"><code>mwp --help</code> lista todos os comandos e opções.</p>
+      <p class="en"><code>mwp --help</code> lists every command and option.</p>
+    </section>
+
+    <!-- 10 -->
+    <section id="trouble">
+      <h2><span class="n">10</span><span class="pt">Problemas comuns</span><span class="en">Troubleshooting</span></h2>
+      <div class="grid2">
+        <div class="card"><h4><code style="border:0;background:none;padding:0">mwp: command not found</code></h4>
+          <p class="pt">A pasta <code>bin</code> do cargo não está no <code>PATH</code>. O instalador mostra o caminho; adicione-o e abra um terminal novo.</p>
+          <p class="en">Cargo's <code>bin</code> folder is not on your <code>PATH</code>. The installer prints the path; add it and open a new terminal.</p></div>
+        <div class="card"><h4 class="pt">O PowerShell bloqueia o script</h4><h4 class="en">PowerShell blocks the script</h4>
+          <p class="pt">Rode com <code>powershell -ExecutionPolicy Bypass -File .\src\install.ps1</code>.</p>
+          <p class="en">Run it with <code>powershell -ExecutionPolicy Bypass -File .\src\install.ps1</code>.</p></div>
+        <div class="card"><h4><code style="border:0;background:none;padding:0">MISSING</code> <span class="pt">no context</span><span class="en">in context</span></h4>
+          <p class="pt">A task cita um ID que não existe (módulo, SPEC, ADR ou task). Corrija o front matter ou crie o que falta.</p>
+          <p class="en">The task cites an ID that does not exist (module, SPEC, ADR or task). Fix the front matter or create what is missing.</p></div>
+        <div class="card"><h4 class="pt"><code style="border:0;background:none;padding:0">task start</code> falha</h4><h4 class="en"><code style="border:0;background:none;padding:0">task start</code> fails</h4>
+          <p class="pt">Outro agente tem a task ou um dos módulos. Veja com <code>mwp locks</code> (ou <b>Agents at work</b>) e espere, ou libere a task se o agente parou.</p>
+          <p class="en">Another agent holds the task or one of its modules. Check with <code>mwp locks</code> (or <b>Agents at work</b>) and wait, or release the task if that agent stopped.</p></div>
+      </div>
+    </section>
+
+    <footer>
+      <img src="../assets/icone/icon.svg" alt="">
+      <span>Module Work Plan · Apache-2.0</span>
+      <a href="../README.md">README</a>
+      <a class="pt" href="../README.pt-BR.md">README (pt-BR)</a>
+      <a class="pt" href="../assets/docs/philosophy.pt-BR.md">Filosofia</a><a class="en" href="../assets/docs/philosophy.md">Philosophy</a>
+      <a href="../src/gui/CHANGELOG.md">CHANGELOG (GUI)</a>
+    </footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  // Storage can be blocked (private windows, file pages): the page works without it.
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  // Language: saved choice, else the browser's.
+  function setLang(l) {
+    root.dataset.lang = l;
+    root.lang = l === 'pt' ? 'pt-BR' : 'en';
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.setLang === l)); });
+    save('mwp-guide-lang', l);
+  }
+  setLang(load('mwp-guide-lang') || ((navigator.language || 'en').toLowerCase().indexOf('pt') === 0 ? 'pt' : 'en'));
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) { b.addEventListener('click', function () { setLang(b.dataset.setLang); }); });
+
+  // Theme: the system's unless one is picked.
+  var dark = window.matchMedia('(prefers-color-scheme: dark)');
+  function isDark() { return root.dataset.theme ? root.dataset.theme === 'dark' : dark.matches; }
+  function logo() { var img = document.getElementById('logoImg'); var src = isDark() ? '../assets/icone/icon-dark.svg' : '../assets/icone/icon.svg'; img.parentNode.querySelector('source').srcset = src; img.src = src; }
+  function setTheme(t) {
+    if (t === 'system') delete root.dataset.theme; else root.dataset.theme = t;
+    document.querySelectorAll('[data-set-theme]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.setTheme === t)); });
+    save('mwp-guide-theme', t);
+    logo();
+  }
+  setTheme(load('mwp-guide-theme') || 'system');
+  document.querySelectorAll('[data-set-theme]').forEach(function (b) { b.addEventListener('click', function () { setTheme(b.dataset.setTheme); }); });
+  if (dark.addEventListener) dark.addEventListener('change', logo);
+
+  // Operating system tabs; Windows first on Windows.
+  document.querySelectorAll('[data-tabs]').forEach(function (box) {
+    var tabs = box.querySelectorAll('[role="tab"]');
+    function pick(os) {
+      tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.os === os)); });
+      box.querySelectorAll('[role="tabpanel"]').forEach(function (p) { p.hidden = p.dataset.os !== os; });
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { pick(t.dataset.os); }); });
+    pick(/win/i.test(navigator.platform || navigator.userAgent) ? 'win' : 'unix');
+  });
+
+  // Copy buttons on code blocks: the command without the prompt.
+  document.querySelectorAll('.code').forEach(function (block) {
+    var pre = block.querySelector('pre');
+    var btn = document.createElement('button');
+    btn.className = 'copy';
+    btn.type = 'button';
+    btn.innerHTML = '<span class="pt">Copiar</span><span class="en">Copy</span>';
+    btn.addEventListener('click', function () {
+      var clone = pre.cloneNode(true);
+      clone.querySelectorAll('.p').forEach(function (p) { p.remove(); });
+      var other = root.dataset.lang === 'pt' ? '.en' : '.pt';
+      clone.querySelectorAll(other).forEach(function (p) { p.remove(); });
+      var text = clone.textContent.replace(/\s+$/, '');
+      function done() { btn.classList.add('done'); setTimeout(function () { btn.classList.remove('done'); }, 1200); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text); done(); });
+      } else { fallback(text); done(); }
+    });
+    block.appendChild(btn);
+  });
+  function fallback(text) {
+    var t = document.createElement('textarea');
+    t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    t.remove();
+  }
+
+  // Side menu on narrow screens.
+  var side = document.getElementById('side'), menu = document.getElementById('menuBtn');
+  menu.addEventListener('click', function () { var open = side.classList.toggle('open'); menu.setAttribute('aria-expanded', String(open)); });
+  side.addEventListener('click', function (e) { if (e.target.closest('a')) { side.classList.remove('open'); menu.setAttribute('aria-expanded', 'false'); } });
+
+  // Highlight the section in view.
+  var links = {};
+  side.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting && links[en.target.id]) {
+          Object.keys(links).forEach(function (k) { links[k].classList.toggle('on', k === en.target.id); });
+        }
+      });
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    document.querySelectorAll('main section').forEach(function (s) { obs.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
