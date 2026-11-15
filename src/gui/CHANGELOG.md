@@ -2,6 +2,10 @@
 
 What changed in each version of the desktop editor.
 
+## Unreleased
+
+- **Windows:** release builds no longer open a console window behind the GUI.
+
 ## 0.1.2 (2026-11-14)
 
 - **Appearance:** theme (dark, light or the system's), text size and text font in Settings > Preferences. The file header no longer runs under its buttons with larger text.

@@ -2,6 +2,9 @@
 //! tabs and preview, the task board, lint problems and a dialog to create a project.
 //! All the MWP logic is in `mwp_core`.
 
+// No console window behind the GUI on Windows in release builds; debug builds keep it for errors.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod board;
 mod dialogs;
 mod editor;
