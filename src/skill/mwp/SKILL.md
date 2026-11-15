@@ -111,6 +111,9 @@ To create modules for code that has none, or to check existing modules against t
 - An existing test fails and seems to contradict the task.
 - `mwp context` reports `MISSING`, or `mwp lint` reports an error you cannot fix inside the task's modules.
 - `mwp task start` fails: another agent holds the task or one of its modules.
+- Content the task needs cannot be found (a file, a resource, a document it cites). Never invent or download a replacement.
+- A link or reference is broken: a path, a URL or an ID.
+- An unexpected error cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing). Report the error and what you tried, then `mwp task release T-XXXX --status blocked`.
 - An ambiguity would change the result.
 
 Priority on conflict: constitution > accepted ADRs > module > task. Never resolve a conflict silently.

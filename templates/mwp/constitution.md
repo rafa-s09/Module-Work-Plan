@@ -70,6 +70,9 @@ If a `[manual]` criterion could not be verified: `status: review`, list what is 
 - Task contradicts a module, durable SPEC or ADR: **stop** and ask.
 - Code contradicts the module: **stop**, describe the divergence and ask which one is right.
 - An existing TEST fails and seems to contradict the task: **stop** and ask.
+- Content the task needs cannot be found (a file, a resource in `mwp/content/`, a document it cites): **stop** and say what is missing. Never invent or download a replacement.
+- A link or reference is broken (a path, a URL, an ID that `mwp context` reports as `MISSING`): **stop** and ask.
+- An unexpected error that cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing): **stop**, report the error and what was tried, and release the task with `mwp task release T-XXXX --status blocked`.
 - Never resolve a conflict silently.
 
 ## 9. When in doubt
