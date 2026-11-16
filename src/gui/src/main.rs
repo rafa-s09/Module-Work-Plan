@@ -233,7 +233,7 @@ impl App {
             app.restore_project();
         }
         // A font file that went missing or broke leaves egui's font, and says why.
-        if let Err(e) = prefs::apply_font(&cc.egui_ctx, app.font.as_deref()) {
+        if let Err(e) = prefs::apply_font(&cc.egui_ctx, app.font.as_deref(), &app.lang) {
             (app.message, app.font) = (Some(e), None);
         }
         prefs::apply_theme(&cc.egui_ctx, app.theme);

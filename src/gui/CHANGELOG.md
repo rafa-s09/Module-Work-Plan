@@ -8,7 +8,8 @@ With the core (`mwp`) 0.3.0.
 
 - **Templates:** new tasks, modules, SPECs, ADRs and projects take their templates from `templates.tar.zst` next to `mwp-gui`, which the installer puts there.
 - **Windows:** release builds no longer open a console window behind the GUI.
-- **Spanish, Japanese and Korean:** the GUI comes in these languages too (`es.json`, `ja.json`, `ko.json`). Japanese and Korean text uses the system's fonts (Yu Gothic and Malgun Gothic on Windows, Hiragino and Apple SD Gothic Neo on macOS, Noto Sans CJK on Linux); without them those characters show as boxes.
+- **Spanish, Japanese, Korean and Chinese:** the GUI comes in these languages too (`es.json`, `ja.json`, `ko.json`, `zh-CN.json` for Simplified Chinese, `zh-TW.json` for Traditional Chinese). Their text uses the system's fonts (Yu Gothic, Malgun Gothic, Microsoft YaHei and Microsoft JhengHei on Windows; Hiragino, Apple SD Gothic Neo and PingFang on macOS; Noto Sans CJK on Linux), with the chosen language's font first; without them those characters show as boxes.
+- **Fonts:** choosing a text font or a language no longer drops the icons when egui applies the change inside a frame.
 
 ## 0.1.2 (2026-11-14)
 

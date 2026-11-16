@@ -51,7 +51,8 @@ pub fn apply_scale(ctx: &egui::Context, scale: f32) {
 /// The fonts: egui's, with the chosen file first for the interface and the preview (the source
 /// editor keeps its monospace font). egui's own fonts stay behind it, so a character the file
 /// lacks still shows, and a file egui cannot read is skipped rather than breaking the text.
-pub fn apply_font(ctx: &egui::Context, file: Option<&Path>) -> Result<(), String> {
+/// `lang` puts its own CJK font first, so Chinese text is not drawn with Japanese glyph shapes.
+pub fn apply_font(ctx: &egui::Context, file: Option<&Path>, lang: &str) -> Result<(), String> {
     let mut defs = egui::FontDefinitions::default();
     let mut result = Ok(());
     if let Some(file) = file {
@@ -64,37 +65,53 @@ pub fn apply_font(ctx: &egui::Context, file: Option<&Path>) -> Result<(), String
             Err(e) => result = Err(format!("{}: {e}", file.display())),
         }
     }
-    for (name, data) in cjk_fonts() {
+    let mut fonts: Vec<_> = cjk_fonts().iter().collect();
+    fonts.sort_by_key(|f| f.0 != lang);
+    for (_, name, data) in fonts {
         defs.font_data.insert(name.clone(), data.clone());
         for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
             defs.families.entry(family).or_default().push(name.clone());
         }
     }
+    // The icon font goes into the same definitions: inside a frame, add_font after set_fonts
+    // sees the icons still installed, skips them, and the new definitions then drop them.
+    let icons = egui_material_icons::font_insert();
+    defs.font_data.insert(icons.name.clone(), std::sync::Arc::new(icons.data));
+    for f in icons.families {
+        let list = defs.families.entry(f.family).or_default();
+        match f.priority {
+            egui::epaint::text::FontPriority::Highest => list.insert(0, icons.name.clone()),
+            egui::epaint::text::FontPriority::Lowest => list.push(icons.name.clone()),
+        }
+    }
     ctx.set_fonts(defs);
-    egui_material_icons::initialize(ctx); // set_fonts drops the icon font: add it back
     result
 }
 
-/// System fonts with Japanese and Korean characters, which egui's fonts lack: the first one
-/// found of each group, read once. A system without them shows those characters as boxes.
-fn cjk_fonts() -> &'static [(String, std::sync::Arc<egui::FontData>)] {
-    static FONTS: std::sync::OnceLock<Vec<(String, std::sync::Arc<egui::FontData>)>> = std::sync::OnceLock::new();
+/// System fonts with Japanese, Korean and Chinese characters, which egui's fonts lack: the
+/// language and the first font found of each group, read once. A system without them shows
+/// those characters as boxes.
+type CjkFont = (&'static str, String, std::sync::Arc<egui::FontData>);
+fn cjk_fonts() -> &'static [CjkFont] {
+    static FONTS: std::sync::OnceLock<Vec<CjkFont>> = std::sync::OnceLock::new();
     FONTS.get_or_init(|| {
         let win = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
         let noto = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"];
         let japanese = [format!(r"{win}\Fonts\YuGothR.ttc"), format!(r"{win}\Fonts\msgothic.ttc"), "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc".into()];
         let korean = [format!(r"{win}\Fonts\malgun.ttf"), "/System/Library/Fonts/AppleSDGothicNeo.ttc".into()];
-        let mut out: Vec<(String, std::sync::Arc<egui::FontData>)> = Vec::new();
-        for group in [japanese.as_slice(), korean.as_slice()] {
+        let simplified = [format!(r"{win}\Fonts\msyh.ttc"), "/System/Library/Fonts/PingFang.ttc".into()];
+        let traditional = [format!(r"{win}\Fonts\msjh.ttc"), "/System/Library/Fonts/PingFang.ttc".into()];
+        let mut out: Vec<CjkFont> = Vec::new();
+        for (lang, group) in [("ja", japanese.as_slice()), ("ko", korean.as_slice()), ("zh-CN", simplified.as_slice()), ("zh-TW", traditional.as_slice())] {
             let found = group.iter().map(String::as_str).chain(noto).find_map(|p| Some(p).zip(fs::read(p).ok().filter(|b| is_font(b))));
             if let Some((path, bytes)) = found {
-                if !out.iter().any(|(name, _)| name == path) {
+                if !out.iter().any(|(_, name, _)| name == path) {
                     let mut data = egui::FontData::from_owned(bytes);
                     // Yu Gothic draws its glyphs well above egui's baseline: shift them down to line up.
                     if path.ends_with("YuGothR.ttc") {
                         data.tweak.y_offset_factor = 0.3;
                     }
-                    out.push((path.to_string(), std::sync::Arc::new(data)));
+                    out.push((lang, path.to_string(), std::sync::Arc::new(data)));
                 }
             }
         }
@@ -130,15 +147,15 @@ mod tests {
         let (name, data) = defs.font_data.iter().next().unwrap();
         let good = dir.join(format!("{name}.ttf"));
         fs::write(&good, data.font.as_ref()).unwrap();
-        assert!(apply_font(&ctx, Some(&good)).is_ok());
+        assert!(apply_font(&ctx, Some(&good), "en").is_ok());
         let bad = dir.join("page.ttf");
         fs::write(&bad, "<html>").unwrap();
-        assert!(apply_font(&ctx, Some(&bad)).unwrap_err().contains("page.ttf"));
-        assert!(apply_font(&ctx, Some(&dir.join("gone.ttf"))).is_err());
-        assert!(apply_font(&ctx, None).is_ok());
+        assert!(apply_font(&ctx, Some(&bad), "en").unwrap_err().contains("page.ttf"));
+        assert!(apply_font(&ctx, Some(&dir.join("gone.ttf")), "en").is_err());
+        assert!(apply_font(&ctx, None, "zh-CN").is_ok());
         let _ = fs::remove_dir_all(&dir);
-        // Windows ships a Japanese and a Korean font, so both are found there.
+        // Windows ships a Japanese, a Korean and both Chinese fonts, so all are found there.
         #[cfg(windows)]
-        assert_eq!(cjk_fonts().len(), 2, "{:?}", cjk_fonts().iter().map(|f| &f.0).collect::<Vec<_>>());
+        assert_eq!(cjk_fonts().iter().map(|f| f.0).collect::<Vec<_>>(), ["ja", "ko", "zh-CN", "zh-TW"]);
     }
 }

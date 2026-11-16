@@ -496,7 +496,7 @@ impl App {
                             });
                             if ui.button(ic(ICON_FOLDER_OPEN, tr("Choose…"))).on_hover_text(tr("A TrueType or OpenType file (.ttf, .otf)")).clicked() {
                                 if let Some(file) = rfd::FileDialog::new().set_title(tr("Text font")).add_filter(tr("Fonts"), &["ttf", "otf", "ttc"]).pick_file() {
-                                    match prefs::apply_font(ctx, Some(&file)) {
+                                    match prefs::apply_font(ctx, Some(&file), lang) {
                                         Ok(()) => (self.font, *error) = (Some(file), String::new()),
                                         Err(e) => *error = e,
                                     }
@@ -504,7 +504,7 @@ impl App {
                             }
                             if self.font.is_some() && ui.button(tr("Default")).clicked() {
                                 self.font = None;
-                                *error = prefs::apply_font(ctx, None).err().unwrap_or_default();
+                                *error = prefs::apply_font(ctx, None, lang).err().unwrap_or_default();
                             }
                         });
                         ui.weak(tr("Used by the menus, dialogs and preview; the source editor keeps its monospace font."));
@@ -801,6 +801,10 @@ impl App {
             self.dialog = next;
         }
         if let Some(code) = new_lang {
+            // The new language may want its own CJK font first.
+            if let Err(e) = prefs::apply_font(ctx, self.font.as_deref(), &code) {
+                (self.message, self.font) = (Some(e), None);
+            }
             self.lang = code;
         }
         if let Some(with) = replace_now {

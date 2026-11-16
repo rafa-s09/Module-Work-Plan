@@ -2,7 +2,7 @@
 //! its translation; keys starting with `_` are notes (`_name` is the language's own name, shown
 //! in Settings). A text missing from the file stays in English.
 //!
-//! The files live in `<config>/mwp-gui/lang/`. The bundled ones (`en`, `pt-BR`, `es`, `ja`, `ko`) are written there
+//! The files live in `<config>/mwp-gui/lang/`. The bundled ones (`en`, `pt-BR`, `es`, `ja`, `ko`, `zh-CN`, `zh-TW`) are written there
 //! the first time, never over the user's copy, and are also read from the binary first: a text
 //! added in a new version is translated even when the user's file predates it. Any other
 //! `<code>.json` dropped in the folder shows up as a language.
@@ -12,12 +12,14 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// The languages that come with the GUI: code and file.
-pub const BUNDLED: [(&str, &str); 5] = [
+pub const BUNDLED: [(&str, &str); 7] = [
     ("en", include_str!("../lang/en.json")),
     ("pt-BR", include_str!("../lang/pt-BR.json")),
     ("es", include_str!("../lang/es.json")),
     ("ja", include_str!("../lang/ja.json")),
     ("ko", include_str!("../lang/ko.json")),
+    ("zh-CN", include_str!("../lang/zh-CN.json")),
+    ("zh-TW", include_str!("../lang/zh-TW.json")),
 ];
 
 /// The texts of the language in use; `None` is English.
