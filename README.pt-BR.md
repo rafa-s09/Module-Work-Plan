@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-202B3C" alt="Licença: Apache 2.0"></a>
-  <img src="https://img.shields.io/badge/rust-1.85%2B-E4572E" alt="Rust 1.85+">
+  <img src="https://img.shields.io/badge/rust-1.85%2B-E4572E" alt="Rust 1.95+">
 </p>
 
 <p align="center"><a href="README.md">English</a> · <strong>Português (Brasil)</strong></p>
