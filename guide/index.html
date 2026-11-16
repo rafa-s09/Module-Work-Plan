@@ -476,8 +476,8 @@
 
       <div class="note">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        <p class="pt">Sem os scripts, é o mesmo que <code>cargo install --path src/client --locked</code> (e <code>src/gui</code> para a GUI). Os templates e as skills ficam dentro do binário: rode o instalador de novo depois de mudar <code>templates/</code> ou <code>src/skill/</code>.</p>
-        <p class="en">Without the scripts it is <code>cargo install --path src/client --locked</code> (and <code>src/gui</code> for the GUI). Templates and skills are built into the binary: run the installer again after changing <code>templates/</code> or <code>src/skill/</code>.</p>
+        <p class="pt">Sem os scripts, é o mesmo que <code>cargo install --path src/client --locked</code> (e <code>src/gui</code> para a GUI). As skills ficam dentro do binário, e os templates ficam em <code>templates.tar.zst</code>, que o instalador coloca ao lado do <code>mwp</code>; com o <code>cargo install</code> sozinho, copie esse arquivo de <code>target/release/</code>. Rode o instalador de novo depois de mudar <code>templates/</code> ou <code>src/skill/</code>.</p>
+        <p class="en">Without the scripts it is <code>cargo install --path src/client --locked</code> (and <code>src/gui</code> for the GUI). Skills are built into the binary; templates live in <code>templates.tar.zst</code>, which the installer puts next to <code>mwp</code> (with plain <code>cargo install</code>, copy it from <code>target/release/</code>). Run the installer again after changing <code>templates/</code> or <code>src/skill/</code>.</p>
       </div>
     </section>
 

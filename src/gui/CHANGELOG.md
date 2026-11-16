@@ -2,9 +2,13 @@
 
 What changed in each version of the desktop editor.
 
-## Unreleased
+## 0.1.3 (2026-11-16)
 
+With the core (`mwp`) 0.3.0.
+
+- **Templates:** new tasks, modules, SPECs, ADRs and projects take their templates from `templates.tar.zst` next to `mwp-gui`, which the installer puts there.
 - **Windows:** release builds no longer open a console window behind the GUI.
+- **Spanish, Japanese and Korean:** the GUI comes in these languages too (`es.json`, `ja.json`, `ko.json`). Japanese and Korean text uses the system's fonts (Yu Gothic and Malgun Gothic on Windows, Hiragino and Apple SD Gothic Neo on macOS, Noto Sans CJK on Linux); without them those characters show as boxes.
 
 ## 0.1.2 (2026-11-14)
 

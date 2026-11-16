@@ -97,7 +97,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 
 ## Editor (GUI)
 
-`mwp-gui` (version 0.1.2) is an optional desktop editor for the person following the work:
+`mwp-gui` (version 0.1.3) is an optional desktop editor for the person following the work:
 
 - **Explorer** of the `mwp/` files by section (project, modules with their subfolders, SPECs, ADRs, then tasks split into open and done; right-click Modules or a folder to add a module or a folder there), with broken files in red, and the agents at work with the modules they lock. **Rename** a file or folder (right-click, or F2 for the open file; a module keeps its ID) and drag files and folders onto another folder of Modules or Content to move them; ADRs and done tasks stay as they are.
 - **Markdown editor** with tabs: highlighted source with line numbers, a formatting toolbar (headings, bold, italic, code, lists, checklists, quotes, links) and a live preview, side by side or alone. The front matter shows as a property table in the preview.
@@ -116,17 +116,13 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **New task**, **New module**, **New SPEC** and **New ADR** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`, a SPEC gets a module or task as its owner, an ADR can replace one in force.
 - **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
 - **File > New project** creates a project (folder, name, agents, skills), like `mwp init`. **File > Open project** browses for a folder or reopens one of the 5 recent projects, also listed on the start screen.
-- **Settings > Preferences** sets the theme (dark, light or the system's), the text size (80% to 160%) and the text font (any TrueType or OpenType file; the source editor keeps its monospace font), all applied at once and remembered. It also picks the language of the GUI: English and Brazilian Portuguese come with it. Each language is a JSON file in `<config>/mwp-gui/lang/` (on Windows, `%APPDATA%\mwp-gui\lang\`) that maps the English texts to their translation; copy `en.json` to `<code>.json` and translate it to add another, and a text missing from a file stays in English. Messages from the core (lint lines, errors) stay in English.
+- **Settings > Preferences** sets the theme (dark, light or the system's), the text size (80% to 160%) and the text font (any TrueType or OpenType file; the source editor keeps its monospace font), all applied at once and remembered. It also picks the language of the GUI: English, Brazilian Portuguese, Spanish, Japanese and Korean come with it (Japanese and Korean use the system's fonts). Each language is a JSON file in `<config>/mwp-gui/lang/` (on Windows, `%APPDATA%\mwp-gui\lang\`) that maps the English texts to their translation; copy `en.json` to `<code>.json` and translate it to add another, and a text missing from a file stays in English. Messages from the core (lint lines, errors) stay in English.
 - **Help > About** shows the project art, the versions of the GUI and of the core, and the license.
 - The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode, and each project's open tabs and board filters. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.
 
 It rereads the project every 2 seconds, so it follows what agents change.
 
-Install it with the installer's `--gui` / `-Gui` option, or on its own:
-
-```bash
-cargo install --path src/gui --locked
-```
+Install it with the installer's `--gui` / `-Gui` option. The installer also puts `templates.tar.zst` next to `mwp` and `mwp-gui`: both read the templates of `mwp init` and of new tasks, modules, SPECs and ADRs from it. A plain `cargo install --path src/gui --locked` leaves that file in the build folder (`target/release/`), so copy it next to the binary yourself.
 
 Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`. What changed in each version is in its [CHANGELOG](src/gui/CHANGELOG.md).
 

@@ -2,7 +2,7 @@
 //! its translation; keys starting with `_` are notes (`_name` is the language's own name, shown
 //! in Settings). A text missing from the file stays in English.
 //!
-//! The files live in `<config>/mwp-gui/lang/`. The bundled ones (`en`, `pt-BR`) are written there
+//! The files live in `<config>/mwp-gui/lang/`. The bundled ones (`en`, `pt-BR`, `es`, `ja`, `ko`) are written there
 //! the first time, never over the user's copy, and are also read from the binary first: a text
 //! added in a new version is translated even when the user's file predates it. Any other
 //! `<code>.json` dropped in the folder shows up as a language.
@@ -12,7 +12,13 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// The languages that come with the GUI: code and file.
-pub const BUNDLED: [(&str, &str); 2] = [("en", include_str!("../lang/en.json")), ("pt-BR", include_str!("../lang/pt-BR.json"))];
+pub const BUNDLED: [(&str, &str); 5] = [
+    ("en", include_str!("../lang/en.json")),
+    ("pt-BR", include_str!("../lang/pt-BR.json")),
+    ("es", include_str!("../lang/es.json")),
+    ("ja", include_str!("../lang/ja.json")),
+    ("ko", include_str!("../lang/ko.json")),
+];
 
 /// The texts of the language in use; `None` is English.
 static TEXTS: RwLock<Option<HashMap<&'static str, &'static str>>> = RwLock::new(None);
@@ -127,11 +133,21 @@ mod tests {
         assert_eq!((m["_name"].as_str(), m["Save"].as_str()), ("Test", "Salvar"));
         assert!(parse("{\"Save\": 3}").unwrap_err().contains("`Save`"));
         assert!(parse("{\"Save\": \"x\",}").is_err(), "a trailing comma is an error, not a silent skip");
-        // Both bundled files read, and pt-BR translates every text en has.
+        // Every bundled file reads and translates every text en has.
         let en = parse(BUNDLED[0].1).unwrap();
-        let pt = parse(BUNDLED[1].1).unwrap();
-        let missing: Vec<&String> = en.keys().filter(|k| !k.starts_with('_') && !pt.contains_key(*k)).collect();
-        assert!(missing.is_empty(), "pt-BR.json lacks: {missing:?}");
+        for (code, text) in &BUNDLED[1..] {
+            let lang = parse(text).unwrap();
+            let missing: Vec<&String> = en.keys().filter(|k| !k.starts_with('_') && !lang.contains_key(*k)).collect();
+            assert!(missing.is_empty(), "{code}.json lacks: {missing:?}");
+            // A translation keeps the {slots} of its text, or trf leaves them unfilled.
+            let slots = |s: &str| {
+                let mut v: Vec<String> = s.split('{').skip(1).filter_map(|p| p.split_once('}')).map(|(n, _)| n.to_string()).collect();
+                v.sort();
+                v
+            };
+            let broken: Vec<&String> = lang.iter().filter(|(k, v)| !k.starts_with('_') && slots(k) != slots(v)).map(|(k, _)| k).collect();
+            assert!(broken.is_empty(), "{code}.json changes the {{slots}} of: {broken:?}");
+        }
         assert!(en.iter().all(|(k, v)| k.starts_with('_') || k == v), "en.json maps each text to itself");
     }
 

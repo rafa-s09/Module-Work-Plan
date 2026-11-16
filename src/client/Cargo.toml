@@ -1,6 +1,6 @@
 [package]
 name = "mwp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.85"
 description = "CLI for MWP (Module Work Plan): create, check and navigate the mwp/ documentation."
@@ -14,3 +14,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "mwp"
 path = "src/main.rs"
+
+[dependencies]
+ruzstd = "0.8.2"
+tar = "0.4.46"
+
+[build-dependencies]
+ruzstd = "0.8.2"
+tar = "0.4.46"

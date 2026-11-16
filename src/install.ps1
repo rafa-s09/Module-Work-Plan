@@ -9,16 +9,19 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# --force reinstalls, so template and skill changes reach the binary.
-cargo install --path "$PSScriptRoot\client" --locked --force
+# --force reinstalls, so skill changes reach the binary. A fixed --target-dir keeps the build,
+# where build.rs leaves templates.tar.zst: the binaries read it from their own folder.
+$build = Join-Path $PSScriptRoot "..\target\install"
+cargo install --path "$PSScriptRoot\client" --locked --force --target-dir $build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($Gui) {
-    cargo install --path "$PSScriptRoot\gui" --locked --force
+    cargo install --path "$PSScriptRoot\gui" --locked --force --target-dir $build
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 $root = if ($env:CARGO_INSTALL_ROOT) { $env:CARGO_INSTALL_ROOT } elseif ($env:CARGO_HOME) { $env:CARGO_HOME } else { "$HOME\.cargo" }
 $bin = Join-Path $root "bin"
+Copy-Item (Join-Path $build "release\templates.tar.zst") $bin -Force
 if ($Project) {
     & (Join-Path $bin "mwp.exe") init $Project
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

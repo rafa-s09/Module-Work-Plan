@@ -97,7 +97,7 @@ O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templat
 
 ## Editor (GUI)
 
-O `mwp-gui` (versão 0.1.2) é um editor de desktop opcional para a pessoa que acompanha o trabalho:
+O `mwp-gui` (versão 0.1.3) é um editor de desktop opcional para a pessoa que acompanha o trabalho:
 
 - **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos com suas subpastas, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas; o botão direito em Modules ou numa pasta cria ali um módulo ou uma pasta), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam. **Renomeie** um arquivo ou pasta (botão direito, ou F2 para o arquivo aberto; um módulo mantém o ID) e arraste arquivos e pastas para outra pasta de Modules ou de Content para movê-los; ADRs e tasks concluídas ficam como estão.
 - **Editor de Markdown** com abas: código com destaque e números de linha, barra de formatação (títulos, negrito, itálico, código, listas, checklists, citações, links) e preview ao vivo, lado a lado ou sozinho. O front matter aparece como tabela de propriedades no preview.
@@ -116,17 +116,13 @@ O `mwp-gui` (versão 0.1.2) é um editor de desktop opcional para a pessoa que a
 - **New task**, **New module**, **New SPEC** e **New ADR** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`, uma SPEC recebe um módulo ou uma task como dono e um ADR pode substituir outro em vigor.
 - **Delete** (cabeçalho do arquivo, botão direito no explorador ou num cartão, menu File) apaga um módulo, uma SPEC ou uma task aberta depois de confirmar; os locks da task são liberados e o `map.md` acompanha os módulos.
 - **File > New project** cria um projeto (pasta, nome, agentes, skills), como o `mwp init`. **File > Open project** procura a pasta ou reabre um dos 5 projetos recentes, que também aparecem na tela inicial.
-- **Settings > Preferences** define o tema (escuro, claro ou o do sistema), o tamanho do texto (de 80% a 160%) e a fonte do texto (qualquer arquivo TrueType ou OpenType; o editor de código mantém a sua fonte monoespaçada), tudo aplicado na hora e lembrado. Também escolhe o idioma da GUI: inglês e português do Brasil vêm junto. Cada idioma é um arquivo JSON em `<config>/mwp-gui/lang/` (no Windows, `%APPDATA%\mwp-gui\lang\`) que liga os textos em inglês à sua tradução; para outro idioma, copie o `en.json` para `<código>.json` e traduza, e um texto que faltar no arquivo fica em inglês. As mensagens do core (linhas do lint, erros) continuam em inglês.
+- **Settings > Preferences** define o tema (escuro, claro ou o do sistema), o tamanho do texto (de 80% a 160%) e a fonte do texto (qualquer arquivo TrueType ou OpenType; o editor de código mantém a sua fonte monoespaçada), tudo aplicado na hora e lembrado. Também escolhe o idioma da GUI: inglês, português do Brasil, espanhol, japonês e coreano vêm junto (japonês e coreano usam as fontes do sistema). Cada idioma é um arquivo JSON em `<config>/mwp-gui/lang/` (no Windows, `%APPDATA%\mwp-gui\lang\`) que liga os textos em inglês à sua tradução; para outro idioma, copie o `en.json` para `<código>.json` e traduza, e um texto que faltar no arquivo fica em inglês. As mensagens do core (linhas do lint, erros) continuam em inglês.
 - **Help > About** mostra a arte do projeto, as versões da GUI e do core, e a licença.
 - A GUI volta como foi deixada: tamanho e posição da janela, largura do explorador, altura do painel inferior, seções recolhidas, modo do editor, e as abas abertas e os filtros do quadro de cada projeto. O estado fica em `<config>/mwp-gui/` (no Windows, `%APPDATA%\mwp-gui\`); se o arquivo estiver danificado, a GUI abre com o padrão.
 
 Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram.
 
-Instale com a opção `--gui` / `-Gui` do instalador, ou separado:
-
-```bash
-cargo install --path src/gui --locked
-```
+Instale com a opção `--gui` / `-Gui` do instalador. O instalador também coloca o `templates.tar.zst` ao lado do `mwp` e do `mwp-gui`: os dois leem dele os templates do `mwp init` e das novas tasks, módulos, SPECs e ADRs. Um `cargo install --path src/gui --locked` sozinho deixa esse arquivo na pasta do build (`target/release/`), então copie-o para o lado do binário.
 
 Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`. O que mudou em cada versão está no [CHANGELOG](src/gui/CHANGELOG.md).
 

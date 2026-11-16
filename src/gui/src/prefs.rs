@@ -64,9 +64,42 @@ pub fn apply_font(ctx: &egui::Context, file: Option<&Path>) -> Result<(), String
             Err(e) => result = Err(format!("{}: {e}", file.display())),
         }
     }
+    for (name, data) in cjk_fonts() {
+        defs.font_data.insert(name.clone(), data.clone());
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            defs.families.entry(family).or_default().push(name.clone());
+        }
+    }
     ctx.set_fonts(defs);
     egui_material_icons::initialize(ctx); // set_fonts drops the icon font: add it back
     result
+}
+
+/// System fonts with Japanese and Korean characters, which egui's fonts lack: the first one
+/// found of each group, read once. A system without them shows those characters as boxes.
+fn cjk_fonts() -> &'static [(String, std::sync::Arc<egui::FontData>)] {
+    static FONTS: std::sync::OnceLock<Vec<(String, std::sync::Arc<egui::FontData>)>> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| {
+        let win = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
+        let noto = ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"];
+        let japanese = [format!(r"{win}\Fonts\YuGothR.ttc"), format!(r"{win}\Fonts\msgothic.ttc"), "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc".into()];
+        let korean = [format!(r"{win}\Fonts\malgun.ttf"), "/System/Library/Fonts/AppleSDGothicNeo.ttc".into()];
+        let mut out: Vec<(String, std::sync::Arc<egui::FontData>)> = Vec::new();
+        for group in [japanese.as_slice(), korean.as_slice()] {
+            let found = group.iter().map(String::as_str).chain(noto).find_map(|p| Some(p).zip(fs::read(p).ok().filter(|b| is_font(b))));
+            if let Some((path, bytes)) = found {
+                if !out.iter().any(|(name, _)| name == path) {
+                    let mut data = egui::FontData::from_owned(bytes);
+                    // Yu Gothic draws its glyphs well above egui's baseline: shift them down to line up.
+                    if path.ends_with("YuGothR.ttc") {
+                        data.tweak.y_offset_factor = 0.3;
+                    }
+                    out.push((path.to_string(), std::sync::Arc::new(data)));
+                }
+            }
+        }
+        out
+    })
 }
 
 /// TrueType, OpenType or a collection of them, by the first four bytes.
@@ -104,5 +137,8 @@ mod tests {
         assert!(apply_font(&ctx, Some(&dir.join("gone.ttf"))).is_err());
         assert!(apply_font(&ctx, None).is_ok());
         let _ = fs::remove_dir_all(&dir);
+        // Windows ships a Japanese and a Korean font, so both are found there.
+        #[cfg(windows)]
+        assert_eq!(cjk_fonts().len(), 2, "{:?}", cjk_fonts().iter().map(|f| &f.0).collect::<Vec<_>>());
     }
 }

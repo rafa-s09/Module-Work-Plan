@@ -13,7 +13,7 @@ pub struct Layout {
     pub mode: Mode,
     pub show_done: bool,
     pub show_problems: bool,
-    /// The language of the GUI, as the code of its file (`en`, `pt-BR`).
+    /// The language of the GUI, as the code of its file (`en`, `pt-BR`, `es`, `ja`, `ko`).
     pub lang: String,
     /// Appearance (see `prefs`): theme code, text size as a share of the default, text font file.
     pub theme: String,

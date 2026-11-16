@@ -79,7 +79,7 @@ pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&s
         }
     }
     let id = format!("T-{:04}", state::allocate(p, "T").map_err(|e| e.to_string())?);
-    let mut text = template(if size == "S" { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })
+    let mut text = template(if size == "S" { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })?
         .replace("id: <T-XXXX>", &format!("id: {id}"))
         .replace("# <T-XXXX> — <Title>", &format!("# {id} — {title}"));
     text = set_field(&set_field(&text, "size", size), "created", &today());
@@ -240,7 +240,7 @@ pub fn module_new(p: &Project, folder: &str, id: &str, kind: &str, summary: &str
     if p.by_id("module", id).is_some() || path.exists() {
         return Err(format!("module `{id}` already exists"));
     }
-    let mut text = template("mwp/modules/_template.md").replace("# <Module name>", &format!("# {id}"));
+    let mut text = template("mwp/modules/_template.md")?.replace("# <Module name>", &format!("# {id}"));
     for (key, value) in [("id", id), ("type", kind), ("summary", summary), ("code", "[]"), ("tests", "[]"), ("updated", &today())] {
         text = set_field(&text, key, value);
     }
@@ -261,7 +261,7 @@ pub fn spec_new(p: &Project, title: &str, owner: &str, lifetime: &str) -> Lines 
         return Err(format!("owner `{owner}` is not a module or task"));
     }
     let id = format!("SP-{:04}", state::allocate(p, "SP").map_err(|e| e.to_string())?);
-    let mut text = template("mwp/specs/_template.md")
+    let mut text = template("mwp/specs/_template.md")?
         .replace("id: <SP-XXXX>", &format!("id: {id}"))
         .replace("# <SP-XXXX> — <Title>", &format!("# {id} — {title}"));
     for (key, value) in [("lifetime", lifetime), ("owner", owner), ("created", &today()), ("updated", &today())] {
@@ -369,7 +369,7 @@ pub fn adr_new(p: &Project, title: &str, modules: Option<&str>, supersedes: Opti
     };
     let id = format!("ADR-{:04}", state::allocate(p, "ADR").map_err(|e| e.to_string())?);
     let date = today();
-    let text = template("mwp/decisions/_template.md")
+    let text = template("mwp/decisions/_template.md")?
         .replace("id: <ADR-XXXX>", &format!("id: {id}"))
         .replace("# <ADR-XXXX> — <Title>", &format!("# {id} — {title}"))
         .replace("<YYYY-MM-DD>", &date)
