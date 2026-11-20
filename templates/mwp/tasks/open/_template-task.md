@@ -2,7 +2,7 @@
 kind: task
 id: <T-XXXX>
 status: open            # open | in_progress | blocked | review | done
-size: M                 # S | M | L (L requires an approved plan)
+size: M                 # XS | S | M | L | XL | XXL (L and up require an approved plan)
 created: <YYYY-MM-DD>
 modules: []             # modules the task may write
 reads: []               # extra modules to read, not write
@@ -29,8 +29,9 @@ external: []            # company work codes (Jira, ticket, OS...); optional
 - [ ] AC-4 [doc] <Rules and TESTs registered in the module; changelog updated.>
 
 ## Plan
-> Required for size L: the agent fills it in and STOPS until approval.
-> Optional for S and M. Over ~30 lines, move it to a transient SPEC.
+> Required for size L and up: the agent fills it in and STOPS until approval.
+> XL: the plan goes into a transient SPEC. XXL: the plan is the list of smaller tasks.
+> Optional for M. Over ~30 lines, move it to a transient SPEC.
 
 ## Closure
 > Filled in by the agent when finishing.
@@ -41,3 +42,5 @@ external: []            # company work codes (Jira, ticket, OS...); optional
 - **Modules read outside the manifest:**
 - **Deviations from the plan:**
 - **Follow-ups / suggested tasks:**
+- **Replanning:**
+> Only when replanned: why the plan failed and the new tasks. Mark each criterion not met `- [-] ... — failed: <reason>`.

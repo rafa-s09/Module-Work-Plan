@@ -36,7 +36,8 @@
 ## 5. Tests
 - Domain rules, contracts, bug fixes and measurable NFRs require a TEST.
 - The test name in code starts with its ID: `TEST-0007: ...`.
-- Size M and L tasks: write the test first, confirm it fails, then implement.
+- Size M and up: write the test first, confirm it fails, then implement.
+- Rule of 3: if a test or criterion still fails after 3 fix attempts, **stop**. Report what you tried and your hypothesis, and wait for a person to decide whether to go on or take another route. Rerunning the regression suite does not count.
 - Every new TEST is registered in the module's `## Tests` table (ID, covered rule, scenario, file).
 - Project IDs (`T`, `SP`, `ADR`, `TEST`) are global, sequential, at least 4 digits (`T-0043`) and never reused: use `mwp next <prefix> --reserve`, or the highest one in the project plus one.
 - Company work codes go in the task's `external:` field, never in `id:`.
@@ -61,6 +62,8 @@ A task moves to `tasks/done/` only when:
 
 If a `[manual]` criterion could not be verified: `status: review`, list what is missing and stop.
 
+**Replanning.** When the plan cannot reach the goal and a person agrees to replan: mark each criterion not met `- [-] AC-N ... — failed: <reason>`, fill `## Closure` with `**Replanning:**` (why the plan failed and the new tasks), and close with `mwp task close T-XXXX --replanned` (`status: replanned`, moved to `tasks/done/`). The new tasks cite it in `refs:`.
+
 ## 8. Conflicts — priority order
 1. `constitution.md`
 2. Accepted ADRs
@@ -71,10 +74,22 @@ If a `[manual]` criterion could not be verified: `status: review`, list what is 
 - Code contradicts the module: **stop**, describe the divergence and ask which one is right.
 - An existing TEST fails and seems to contradict the task: **stop** and ask.
 - Content the task needs cannot be found (a file, a resource in `mwp/content/`, a document it cites): **stop** and say what is missing. Never invent or download a replacement.
-- A link or reference is broken (a path, a URL, an ID that `mwp context` reports as `MISSING`): **stop** and ask.
+- A link or reference is broken (a path, a URL, an ID that `mwp context` reports as `MISSING`): **stop** and ask. A module's `code:` or `tests:` path that the task is about to create is not broken.
 - An unexpected error that cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing): **stop**, report the error and what was tried, and release the task with `mwp task release T-XXXX --status blocked`.
 - Never resolve a conflict silently.
 
 ## 9. When in doubt
 - Ambiguity that changes the result: ask.
 - Trivial detail (variable name, import order): decide and move on.
+
+## 10. Task sizes
+Size by the work **and** by the effort to verify it: many `[manual]` criteria or a long verification raise the size.
+
+| Size | When | Rule |
+|---|---|---|
+| XS | A trivial fix, no new rule | Short template; no test first |
+| S | A few lines, one module | Short template |
+| M | A feature in one or two modules | Test first |
+| L | Several modules | Test first; `## Plan` approved by a person before implementing |
+| XL | Several modules, or many `[manual]` criteria, or a long verification | As L, and the plan goes into a transient SPEC |
+| XXL | Too big for one task | The plan is the list of smaller tasks; a person approves it, and the XXL task is not implemented directly |

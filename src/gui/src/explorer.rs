@@ -210,6 +210,7 @@ pub fn status_icon(ui: &egui::Ui, status: &str) -> (MaterialIcon, Color32) {
         "blocked" => (ICON_BLOCK, v.error_fg_color),
         "review" => (ICON_RATE_REVIEW, v.warn_fg_color),
         "done" => (ICON_CHECK_CIRCLE, Color32::from_rgb(90, 170, 100)),
+        "replanned" => (ICON_ALT_ROUTE, v.warn_fg_color),
         _ => (ICON_RADIO_BUTTON_UNCHECKED, v.weak_text_color()),
     }
 }

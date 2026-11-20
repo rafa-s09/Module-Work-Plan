@@ -23,10 +23,11 @@ Project
   remap [--dry-run]                         Recheck modules (paths, dependencies, tests) and update map.md
 
 Tasks
-  task new <title> [--size S|M|L] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]
+  task new <title> [--size XS|S|M|L|XL|XXL] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]
                                             Create an open task from the template with the next T- ID
   task start <T-XXXX> [--agent <name>]      Claim the task and lock its modules; fails if another agent holds them
-  task close <T-XXXX>                       Set done, move to tasks/done/, free the locks, run lint
+  task close <T-XXXX> [--replanned]         Set done, move to tasks/done/, free the locks, run lint;
+                                            --replanned closes it as replanned (fill **Replanning:** first)
   task release <T-XXXX> [--status open|blocked|review]
                                             Give the task back without closing it (default: open)
   task-list [--status <s>] [--module <id>] [--all]
@@ -110,7 +111,7 @@ fn main() -> ExitCode {
         "lint" => Args::parse(rest, &["--strict"]).and_then(|a| lint_cmd(&a)),
         "map" => Args::parse(rest, &["--write", "--check"]).and_then(|a| map(&a)),
         "remap" => Args::parse(rest, &["--dry-run"]).and_then(|a| remap(&a)),
-        "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all", "--agent"]).and_then(|a| task(&a)),
+        "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all", "--agent", "--replanned"]).and_then(|a| task(&a)),
         "task-list" => Args::parse(rest, &["--status", "--module", "--all"]).and_then(|a| task_list(&a)),
         "locks" => locks(),
         "next" => Args::parse(rest, &["--reserve"]).and_then(|a| next(&a)),
@@ -253,7 +254,7 @@ fn task(a: &Args) -> Res {
             show(ops::task_start(&Project::find()?, id()?, agent.as_deref().unwrap_or("agent").trim()))
         }
         Some("close") => {
-            let (lines, report) = ops::task_close(&Project::find()?, id()?)?;
+            let (lines, report) = ops::task_close(&Project::find()?, id()?, a.has("--replanned"))?;
             show(Ok(lines))?;
             report.print();
             Ok(report.errors.is_empty())
@@ -266,7 +267,7 @@ fn task(a: &Args) -> Res {
 fn task_list(a: &Args) -> Res {
     let p = Project::find()?;
     let tasks = by_num(p.of_kind("task")
-        .filter(|t| a.has("--all") || a.has("--status") || t.get("status") != "done")
+        .filter(|t| a.has("--all") || a.has("--status") || !lint::closed(t.get("status")))
         .filter(|t| a.get("--status").is_none_or(|s| t.get("status") == s))
         .filter(|t| a.get("--module").is_none_or(|m| t.list("modules").iter().any(|x| x == m)))
         .collect());

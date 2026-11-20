@@ -10,7 +10,14 @@ pub const MODULE_TYPES: [(&str, &str); 5] = [
     ("infra", "Storage, external services, deploy, tooling"),
     ("lib", "Code shared by several modules"),
 ];
-pub const SIZES: [(&str, &str); 3] = [("S", "Small: a few lines, one module"), ("M", "Medium: a feature in one or two modules"), ("L", "Large: several modules, plan first")];
+pub const SIZES: [(&str, &str); 6] = [
+    ("XS", "Extra small: a trivial fix, no new rule"),
+    ("S", "Small: a few lines, one module"),
+    ("M", "Medium: a feature in one or two modules"),
+    ("L", "Large: several modules, plan first"),
+    ("XL", "Extra large: several modules or many manual checks; the plan goes into a SPEC"),
+    ("XXL", "Too big for one task: the plan splits it into smaller tasks"),
+];
 
 pub enum Dialog {
     New { dir: String, name: String, agents: Vec<bool>, skills: bool, error: String },
@@ -107,7 +114,7 @@ impl App {
         let v = self.view.as_ref().ok()?;
         let mut modules: Vec<&Doc> = v.project.of_kind("module").collect();
         modules.sort_by(|a, b| a.id().cmp(b.id()));
-        let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") != "done").collect();
+        let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| !closed(t.get("status"))).collect();
         tasks.sort_by_key(|t| id_num(t.id()));
         let all: Vec<&Doc> = modules.into_iter().chain(tasks).collect();
         let open = self.current().and_then(|e| all.iter().find(|d| d.path == e.path));
@@ -126,7 +133,7 @@ impl App {
         let note = match doc.map(|d| (d.kind(), d.id())) {
             Some(("task", id)) => v.claims.iter().find(|c| c.task == id).map(|c| trf("{agent} is working on it: its claim and module locks are freed.", &[("agent", &c.agent)])).unwrap_or_default(),
             Some(("module", id)) => {
-                let users: Vec<&str> = v.project.of_kind("task").filter(|t| t.get("status") != "done" && t.list("modules").iter().any(|m| m == id)).map(Doc::id).collect();
+                let users: Vec<&str> = v.project.of_kind("task").filter(|t| !closed(t.get("status")) && t.list("modules").iter().any(|m| m == id)).map(Doc::id).collect();
                 if users.is_empty() { String::new() } else { trf("Tasks not done still list it: {ids}.", &[("ids", &users.join(", "))]) }
             }
             _ => String::new(),

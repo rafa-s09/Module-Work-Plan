@@ -9,11 +9,15 @@ pub const COLUMNS: [(&str, &str); 5] = [("open", "Open"), ("in_progress", "In pr
 pub enum TaskCmd {
     Start(String),
     Close(String),
+    /// Close as replanned: the plan failed and new tasks take over.
+    Replan(String),
     Release(String, &'static str),
 }
 
 /// Where a task not done can be moved by hand (`task release`): its locks are freed.
 pub const RELEASE: [(&str, &str); 3] = [("open", "Back to open"), ("blocked", "Blocked"), ("review", "Ready for review")];
+
+const REPLAN_HINT: &str = "Close as replanned and move to tasks/done/; **Replanning:** in ## Closure must say why and name the new tasks";
 
 /// The status changes for a task, as menu items.
 pub fn task_status_items(ui: &mut egui::Ui, id: &str, status: &str, cmd: &mut Option<TaskCmd>) {
@@ -30,11 +34,14 @@ pub fn task_status_items(ui: &mut egui::Ui, id: &str, status: &str, cmd: &mut Op
 /// Start / Status / Close in the header of an open task (laid out right to left).
 pub fn task_buttons(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     let (id, status) = (t.id(), t.get("status"));
-    if id.is_empty() || status == "done" {
+    if id.is_empty() || closed(status) {
         return;
     }
     if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, tr("Close"))).on_hover_text(tr("Set done and move to tasks/done/; ## Closure must be filled")).clicked() {
         *cmd = Some(TaskCmd::Close(id.to_string()));
+    }
+    if status != "open" && ui.button(ic(ICON_ALT_ROUTE, tr("Replan"))).on_hover_text(tr(REPLAN_HINT)).clicked() {
+        *cmd = Some(TaskCmd::Replan(id.to_string()));
     }
     ui.menu_button(ic(ICON_SWAP_HORIZ, tr("Status")), |ui| task_status_items(ui, id, status, cmd));
     if status != "in_progress" {
@@ -48,7 +55,7 @@ pub fn task_buttons(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
 /// The same steps in a card's context menu.
 pub fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     let (id, status) = (t.id(), t.get("status"));
-    if id.is_empty() || status == "done" {
+    if id.is_empty() || closed(status) {
         return;
     }
     if status != "in_progress" && ui.button(ic(ICON_PLAY_ARROW, tr("Start…"))).clicked() {
@@ -57,6 +64,10 @@ pub fn task_menu(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     }
     if matches!(status, "in_progress" | "review") && ui.button(ic(ICON_DONE_ALL, tr("Close"))).clicked() {
         *cmd = Some(TaskCmd::Close(id.to_string()));
+        ui.close();
+    }
+    if status != "open" && ui.button(ic(ICON_ALT_ROUTE, tr("Replan"))).on_hover_text(tr(REPLAN_HINT)).clicked() {
+        *cmd = Some(TaskCmd::Replan(id.to_string()));
         ui.close();
     }
     task_status_items(ui, id, status, cmd);
@@ -158,7 +169,7 @@ pub fn card(ui: &mut egui::Ui, t: &Doc) -> egui::Response {
 /// menu offers (Start, Close for a task in progress or in review, a release). None for the rest.
 pub fn drop_cmd(id: &str, from: &str, to: &str) -> Option<TaskCmd> {
     match to {
-        _ if from == to || from == "done" => None,
+        _ if from == to || closed(from) => None,
         "in_progress" => Some(TaskCmd::Start(id.into())),
         "done" => matches!(from, "in_progress" | "review").then(|| TaskCmd::Close(id.into())),
         _ => RELEASE.iter().find(|r| r.0 == to).map(|r| TaskCmd::Release(id.into(), r.0)),
@@ -250,7 +261,7 @@ pub fn board(ui: &mut egui::Ui, v: &View, show_done: &mut bool, filter: &mut Boa
     ui.columns(columns.len(), |cols| {
         for (ui, (status, label)) in cols.iter_mut().zip(columns) {
             rects.push((*status, ui.max_rect()));
-            let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| t.get("status") == *status && filter.keeps(t)).collect();
+            let mut tasks: Vec<&Doc> = v.project.of_kind("task").filter(|t| (t.get("status") == *status || (*status == "done" && t.get("status") == "replanned")) && filter.keeps(t)).collect();
             tasks.sort_by_key(|t| id_num(t.id()));
             ui.horizontal(|ui| {
                 let (icon, color) = status_icon(ui, status);
@@ -310,7 +321,7 @@ impl App {
     /// Start asks for the agent; Close and the status changes run at once. A task with unsaved
     /// edits is left alone: the step rewrites (or moves) its file.
     pub fn run_task_cmd(&mut self, cmd: TaskCmd) {
-        let (TaskCmd::Start(id) | TaskCmd::Close(id) | TaskCmd::Release(id, _)) = &cmd;
+        let (TaskCmd::Start(id) | TaskCmd::Close(id) | TaskCmd::Replan(id) | TaskCmd::Release(id, _)) = &cmd;
         let Some((path, modules)) = self.view.as_ref().ok().and_then(|v| v.project.by_id("task", id)).map(|t| (t.path.clone(), t.list("modules"))) else { return };
         let notice = |title: String, text: String| Some(Dialog::Notice { title, text });
         if self.tabs.iter().any(|e| e.path == path && e.dirty()) {
@@ -324,7 +335,7 @@ impl App {
                 let agent = std::env::var("MWP_AGENT").ok().filter(|a| !a.trim().is_empty()).or_else(|| agents.first().cloned()).unwrap_or_else(|| "claude".into());
                 self.dialog = Some(Dialog::StartTask { id, agent, agents, modules, error: String::new() });
             }
-            TaskCmd::Close(id) => match project.and_then(|p| ops::task_close(&p, &id)) {
+            TaskCmd::Close(ref id) | TaskCmd::Replan(ref id) => match project.and_then(|p| ops::task_close(&p, id, matches!(cmd, TaskCmd::Replan(_)))) {
                 Ok((lines, report)) => {
                     // The task moved to tasks/done/ (`close T-0001 -> mwp/tasks/done/...`): its tab follows it.
                     let dest = lines.iter().find_map(|l| l.split_once(" -> ")).map(|(_, rel)| self.root.join(rel));
@@ -334,11 +345,11 @@ impl App {
                         }
                     }
                     if !report.errors.is_empty() {
-                        self.message = Some(trf("{id} closed; lint found {n} error(s)", &[("id", &id), ("n", &report.errors.len().to_string())]));
+                        self.message = Some(trf("{id} closed; lint found {n} error(s)", &[("id", id), ("n", &report.errors.len().to_string())]));
                     }
                     self.reload();
                 }
-                Err(e) => self.dialog = notice(trf("Cannot close {id}", &[("id", &id)]), e),
+                Err(e) => self.dialog = notice(trf("Cannot close {id}", &[("id", id)]), e),
             },
             TaskCmd::Release(id, status) => match project.and_then(|p| ops::task_release(&p, &id, status)) {
                 Ok(_) => self.reload(),
@@ -357,6 +368,7 @@ mod tests {
         assert_eq!(drop_cmd("T-1", "open", "in_progress"), Some(TaskCmd::Start("T-1".into())));
         assert_eq!(drop_cmd("T-1", "in_progress", "blocked"), Some(TaskCmd::Release("T-1".into(), "blocked")));
         assert_eq!(drop_cmd("T-1", "review", "done"), Some(TaskCmd::Close("T-1".into())));
+        assert_eq!(drop_cmd("T-1", "replanned", "in_progress"), None, "a replanned task is closed for good");
         assert_eq!(drop_cmd("T-1", "open", "done"), None, "only a task in progress or in review closes");
         assert_eq!(drop_cmd("T-1", "open", "open"), None);
         assert_eq!(drop_cmd("T-1", "done", "open"), None, "a done task never moves");
@@ -388,7 +400,7 @@ mod tests {
         let p = Project::open(&root).unwrap();
         let f = BoardFilter::from_fields(["a".into(), "order".into(), "codex".into(), "S".into()], &p);
         assert_eq!(f.fields(), ["a", "order", "codex", "S"]);
-        let f = BoardFilter::from_fields(["a".into(), "billing".into(), "claude".into(), "XL".into()], &p);
+        let f = BoardFilter::from_fields(["a".into(), "billing".into(), "claude".into(), "XXXL".into()], &p);
         assert_eq!(f.fields(), ["a", "", "", ""], "a module, agent or size no longer there is dropped");
         let _ = fs::remove_dir_all(&root);
     }

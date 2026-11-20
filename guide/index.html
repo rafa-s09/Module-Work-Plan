@@ -566,8 +566,8 @@
 
       <ol class="steps">
         <li><strong class="pt">Criar e descrever</strong><strong class="en">Create and describe</strong>
-          <p class="pt">Preencha <b>Goal</b>, <b>Scope</b> e os <b>critérios de aceite</b>. Cada critério diz como é verificado: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Tamanhos: <b>S</b> (curta), <b>M</b> (testes antes), <b>L</b> (plano aprovado por uma pessoa antes de implementar).</p>
-          <p class="en">Fill in <b>Goal</b>, <b>Scope</b> and the <b>acceptance criteria</b>. Each criterion says how it is verified: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Sizes: <b>S</b> (short), <b>M</b> (tests first), <b>L</b> (a plan a person approves before implementing).</p>
+          <p class="pt">Preencha <b>Goal</b>, <b>Scope</b> e os <b>critérios de aceite</b>. Cada critério diz como é verificado: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Tamanhos: <b>XS</b> e <b>S</b> (curtas), <b>M</b> (testes antes), <b>L</b> (plano aprovado por uma pessoa antes de implementar), <b>XL</b> (como L, com o plano numa SPEC; também para muitos critérios manuais) e <b>XXL</b> (o plano é a divisão em tasks menores).</p>
+          <p class="en">Fill in <b>Goal</b>, <b>Scope</b> and the <b>acceptance criteria</b>. Each criterion says how it is verified: <code>[auto: TEST-0007]</code>, <code>[manual]</code>, <code>[regression]</code>, <code>[doc]</code>. Sizes: <b>XS</b> and <b>S</b> (short), <b>M</b> (tests first), <b>L</b> (a plan a person approves before implementing), <b>XL</b> (as L, with the plan in a SPEC; also for many manual criteria) and <b>XXL</b> (the plan is the split into smaller tasks).</p>
           <div class="both"><div><b>CLI</b><pre>mwp task new "Desconto" --size M --modules order</pre></div><div><b>GUI</b><span class="pt">Nova task, no quadro ou no explorador</span><span class="en">New task, on the board or in the explorer</span></div></div></li>
         <li><strong class="pt">Carregar o contexto</strong><strong class="en">Load the context</strong>
           <p class="pt">Constituição, task e o que o front matter cita, com estimativa de tokens. <code>MISSING</code> = a task cita algo que não existe: o agente para e pergunta.</p>
@@ -585,10 +585,11 @@
           <p class="en">New rules, the tests table, <code>updated:</code> and the changelog row with the task ID.</p>
           <div class="both"><div><b>CLI</b><pre>mwp remap</pre></div><div><b>GUI</b><span class="pt">Update map.md, se o mapa ficou desatualizado</span><span class="en">Update map.md, when the map is stale</span></div></div></li>
         <li><strong class="pt">Fechar</strong><strong class="en">Close</strong>
-          <p class="pt">Com o <code>## Closure</code> preenchido: marca <code>done</code>, move para <code>tasks/done/</code>, libera os bloqueios e roda o lint. Se um critério manual não pôde ser conferido, a task vai para <code>review</code>.</p>
-          <p class="en">With <code>## Closure</code> filled in: sets <code>done</code>, moves to <code>tasks/done/</code>, frees the locks and runs lint. If a manual criterion could not be checked, the task goes to <code>review</code>.</p>
+          <p class="pt">Com o <code>## Closure</code> preenchido: marca <code>done</code>, move para <code>tasks/done/</code>, libera os bloqueios e roda o lint. Se um critério manual não pôde ser conferido, a task vai para <code>review</code>. Se o plano não alcança o objetivo, a task fecha como <code>replanned</code>: critérios não cumpridos com <code>[-]</code> e o motivo em <code>**Replanning:**</code>.</p>
+          <p class="en">With <code>## Closure</code> filled in: sets <code>done</code>, moves to <code>tasks/done/</code>, frees the locks and runs lint. If a manual criterion could not be checked, the task goes to <code>review</code>. If the plan cannot reach the goal, the task closes as <code>replanned</code>: unmet criteria marked <code>[-]</code> and the reason in <code>**Replanning:**</code>.</p>
           <div class="both"><div><b>CLI</b><pre>mwp task close T-0001
-mwp task release T-0001 --status review</pre></div><div><b>GUI</b><span class="pt">Close, Status, ou arrastar para Done</span><span class="en">Close, Status, or drag to Done</span></div></div></li>
+mwp task release T-0001 --status review
+mwp task close T-0001 --replanned</pre></div><div><b>GUI</b><span class="pt">Close, Status, Replan, ou arrastar para Done</span><span class="en">Close, Status, Replan, or drag to Done</span></div></div></li>
       </ol>
     </section>
 

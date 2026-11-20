@@ -2,7 +2,7 @@
 kind: task
 id: <T-XXXX>
 status: open
-size: S
+size: S                 # XS | S
 modules: []
 external: []
 ---

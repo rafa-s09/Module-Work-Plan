@@ -36,13 +36,27 @@ const KINDS: [(&str, &str, &[&str]); 5] = [
 ];
 
 const ENUMS: [(&str, &str, &[&str]); 6] = [
-    ("task", "status", &["open", "in_progress", "blocked", "review", "done"]),
-    ("task", "size", &["S", "M", "L"]),
+    ("task", "status", &["open", "in_progress", "blocked", "review", "done", "replanned"]),
+    ("task", "size", &SIZES),
     ("spec", "lifetime", &["durable", "transient"]),
     ("spec", "status", &["active", "incorporated", "archived"]),
     ("adr", "status", &["proposed", "accepted", "rejected", "superseded", "deprecated"]),
     ("module", "type", &MODULE_TYPES),
 ];
+
+/// Task sizes, smallest first. XS and S use the short template; L and up need an approved plan.
+pub const SIZES: [&str; 6] = ["XS", "S", "M", "L", "XL", "XXL"];
+
+/// A closed task lives in `tasks/done/`: finished (`done`) or given up for new tasks (`replanned`).
+pub fn closed(status: &str) -> bool {
+    matches!(status, "done" | "replanned")
+}
+
+/// True if the `- **<label>:**` line of a section has text after the label.
+pub fn field_filled(section: &str, label: &str) -> bool {
+    let head = format!("**{label}:**");
+    section.lines().filter_map(|l| l.trim().trim_start_matches("- ").strip_prefix(head.as_str())).any(|rest| !rest.trim().is_empty())
+}
 
 /// Module types: a label shown in `map.md`; nothing else depends on it.
 pub const MODULE_TYPES: [&str; 5] = ["domain", "ui", "api", "infra", "lib"];
@@ -134,19 +148,22 @@ fn check_task(p: &Project, d: &Doc, r: &mut Report) {
     refs(p, d, r, "decisions", "adr");
     refs(p, d, r, "refs", "task");
     let in_done = d.path.parent().is_some_and(|f| f.ends_with("done"));
-    let done = d.get("status") == "done";
-    if in_done != done {
-        r.err(p, d, format!("`status: {}` but the file is in tasks/{}", d.get("status"), if in_done { "done" } else { "open" }));
+    let status = d.get("status");
+    if in_done != closed(status) {
+        r.err(p, d, format!("`status: {status}` but the file is in tasks/{}", if in_done { "done" } else { "open" }));
     }
-    if done && !d.section("Closure").is_some_and(has_content) {
-        r.err(p, d, "status is done but `## Closure` is empty".into());
+    if closed(status) && !d.section("Closure").is_some_and(has_content) {
+        r.err(p, d, format!("status is {status} but `## Closure` is empty"));
+    }
+    if status == "replanned" && !d.section("Closure").is_some_and(|c| field_filled(c, "Replanning")) {
+        r.err(p, d, "status is replanned but `**Replanning:**` in `## Closure` is empty".into());
     }
     if !d.path.file_name().unwrap().to_string_lossy().starts_with(d.id()) {
         r.warn(p, d, format!("file name should start with `{}`", d.id()));
     }
     for t in d.list("refs") {
-        if p.by_id("task", &t).is_some_and(|x| x.get("status") != "done") {
-            r.err(p, d, format!("`refs` cites `{t}`, which is not done"));
+        if p.by_id("task", &t).is_some_and(|x| !closed(x.get("status"))) {
+            r.err(p, d, format!("`refs` cites `{t}`, which is not done or replanned"));
         }
     }
 }
@@ -178,17 +195,20 @@ pub fn check_modules(p: &Project, r: &mut Report) {
     for m in p.of_kind("module") {
         refs(p, m, r, "depends_on", "module");
         refs(p, m, r, "specs", "spec");
+        // A path may name code or tests a task has yet to write: a warning, not an error.
         for field in ["code", "tests"] {
             for path in m.list(field) {
                 if !p.root.join(&path).exists() {
-                    r.err(p, m, format!("`{field}` path `{path}` does not exist"));
+                    r.warn(p, m, format!("`{field}` path `{path}` does not exist yet"));
                 }
             }
         }
+        let tests_exist = m.list("tests").iter().any(|t| p.root.join(t).exists());
         let code: Vec<String> = test_files(p, m).iter().filter_map(|f| read(f)).collect();
         for id in registered_tests(m) {
             if !code.iter().any(|t| contains_id(t, &id)) {
-                r.err(p, m, format!("{id} is in `## Tests` but not found under `tests` paths"));
+                let msg = format!("{id} is in `## Tests` but not found under `tests` paths");
+                if tests_exist { r.err(p, m, msg) } else { r.warn(p, m, format!("{msg} (none exists yet)")) }
             }
         }
     }

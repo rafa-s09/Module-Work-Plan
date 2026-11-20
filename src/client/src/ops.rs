@@ -1,7 +1,7 @@
 //! Operations that change the project. They return the lines to show; nothing here prints.
 
 use crate::doc::{map_texts, parse_list, read, set_field, slug, today, Doc, Project};
-use crate::lint::{has_content, lint, Report, MODULE_TYPES};
+use crate::lint::{closed, field_filled, has_content, lint, Report, MODULE_TYPES, SIZES};
 use crate::scaffold::template;
 use crate::state;
 use std::fs;
@@ -62,8 +62,8 @@ pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&s
     if title.is_empty() {
         return Err("the task needs a title".into());
     }
-    if !["S", "M", "L"].contains(&size) {
-        return Err("--size must be S, M or L".into());
+    if !SIZES.contains(&size) {
+        return Err(format!("--size must be one of {}", SIZES.join(", ")));
     }
     let mut lines = Vec::new();
     for (field, value) in fields {
@@ -79,7 +79,7 @@ pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&s
         }
     }
     let id = format!("T-{:04}", state::allocate(p, "T").map_err(|e| e.to_string())?);
-    let mut text = template(if size == "S" { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })?
+    let mut text = template(if matches!(size, "XS" | "S") { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })?
         .replace("id: <T-XXXX>", &format!("id: {id}"))
         .replace("# <T-XXXX> — <Title>", &format!("# {id} — {title}"));
     text = set_field(&set_field(&text, "size", size), "created", &today());
@@ -99,8 +99,8 @@ pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&s
 pub fn task_start(p: &Project, key: &str, agent: &str) -> Lines {
     let t = find_task(p, key)?;
     let id = t.id();
-    if t.get("status") == "done" {
-        return Err(format!("{id} is done; rework is a new task with `refs: [{id}]`"));
+    if closed(t.get("status")) {
+        return Err(format!("{id} is {}; rework is a new task with `refs: [{id}]`", t.get("status")));
     }
     let modules = t.list("modules");
     state::claim(&p.state, id, agent, &modules)?;
@@ -113,19 +113,23 @@ pub fn task_start(p: &Project, key: &str, agent: &str) -> Lines {
     Ok(vec![format!("start {id} (agent: {agent}, modules locked: {locked})")])
 }
 
-/// Closes the task: `status: done`, moved to `tasks/done/`, locks freed. Returns the lint of the result.
-pub fn task_close(p: &Project, key: &str) -> Result<(Vec<String>, Report), String> {
+/// Closes the task: `status: done` (or `replanned`), moved to `tasks/done/`, locks freed. Returns
+/// the lint of the result. A replanned task gave up its plan: its `**Replanning:**` line says why.
+pub fn task_close(p: &Project, key: &str, replanned: bool) -> Result<(Vec<String>, Report), String> {
     let t = find_task(p, key)?;
     let id = t.id();
-    if t.get("status") == "done" {
-        return Err(format!("{id} is already done"));
+    if closed(t.get("status")) {
+        return Err(format!("{id} is already {}", t.get("status")));
     }
     if !t.section("Closure").is_some_and(has_content) {
         return Err(format!("{id}: fill `## Closure` with the evidence for every criterion before closing"));
     }
+    if replanned && !t.section("Closure").is_some_and(|c| field_filled(c, "Replanning")) {
+        return Err(format!("{id}: fill `**Replanning:**` in `## Closure` with why the plan failed and the new tasks"));
+    }
     let text = read(&t.path).ok_or("cannot read the task")?;
     let dest = p.mwp.join("tasks").join("done").join(t.path.file_name().unwrap());
-    write(&dest, set_field(&text, "status", "done"))?;
+    write(&dest, set_field(&text, "status", if replanned { "replanned" } else { "done" }))?;
     if dest != t.path {
         fs::remove_file(&t.path).map_err(|e| e.to_string())?;
     }
@@ -140,8 +144,8 @@ pub fn task_release(p: &Project, key: &str, status: &str) -> Lines {
     }
     let t = find_task(p, key)?;
     let id = t.id();
-    if t.get("status") == "done" {
-        return Err(format!("{id} is done"));
+    if closed(t.get("status")) {
+        return Err(format!("{id} is {}", t.get("status")));
     }
     let text = read(&t.path).ok_or("cannot read the task")?;
     write(&t.path, set_field(&text, "status", status))?;
@@ -415,12 +419,22 @@ mod tests {
             assert!(root.join(f).exists(), "{f}");
         }
         let open = || Project::open(&root).unwrap();
-        fs::write(root.join("mwp/modules/order.md"), "---\nkind: module\nid: order\ntype: domain\nsummary: Orders\nupdated: 2026-01-01\n---\n# order\n").unwrap();
+        fs::write(root.join("mwp/modules/order.md"), "---\nkind: module\nid: order\ntype: domain\nsummary: Orders\ncode: [src/order.rs]\ntests: [tests/order]\nupdated: 2026-01-01\n---\n# order\n\n## Tests\n| ID | Rule | Scenario | File |\n|---|---|---|---|\n| TEST-0001 | FR-01 | total | tests/order |\n").unwrap();
         fs::write(root.join("mwp/map.md"), map_texts(&open()).unwrap().1).unwrap();
 
         task_new(&open(), "First", "S", &[("modules", Some("order"))]).unwrap();
         task_new(&open(), "Second", "M", &[("modules", Some("order")), ("external", Some("PROJ-9"))]).unwrap();
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("size"), "M");
+        // Code and tests not written yet are warnings, not errors.
+        let r = lint(&open());
+        assert!(r.errors.is_empty(), "{:?}", r.errors);
+        assert!(r.warnings.iter().any(|w| w.contains("src/order.rs")) && r.warnings.iter().any(|w| w.contains("TEST-0001")));
+        fs::create_dir_all(root.join("tests/order")).unwrap();
+        assert!(lint(&open()).errors.iter().any(|e| e.contains("TEST-0001")), "a test missing from an existing folder is an error");
+        fs::write(root.join("tests/order/total.rs"), "// TEST-0001: total
+").unwrap();
+        // Six sizes; XS uses the short template like S.
+        assert!(task_new(&open(), "Huge", "XXXL", &[]).unwrap_err().contains("XXL"));
         // Context: constitution, task, cited module; a cited ID that does not exist is missing.
         task_new(&open(), "Third", "S", &[("modules", Some("order")), ("refs", Some("T-0404"))]).unwrap();
         let p = open();
@@ -447,7 +461,7 @@ mod tests {
         assert!(task_start(&open(), "PROJ-9", "codex").unwrap_err().contains("T-0001"));
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("status"), "open");
 
-        assert!(task_close(&open(), "T-0001").is_err()); // empty closure
+        assert!(task_close(&open(), "T-0001", false).is_err()); // empty closure
 
         // A task without front matter is reported, not silently dropped.
         let broken = root.join("mwp/tasks/open/T-0009-broken.md");
@@ -464,7 +478,7 @@ mod tests {
         assert!(read(&skill).unwrap().starts_with("---"));
         let task = open().by_id("task", "T-0001").unwrap().path.clone();
         fs::write(&task, read(&task).unwrap() + "Checked by hand.\n").unwrap();
-        let (_, report) = task_close(&open(), "T-0001").unwrap();
+        let (_, report) = task_close(&open(), "T-0001", false).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert!(root.join("mwp/tasks/done").join(task.file_name().unwrap()).exists() && !task.exists());
 
@@ -472,6 +486,22 @@ mod tests {
         task_start(&open(), "T-0002", "codex").unwrap();
         task_release(&open(), "T-0002", "blocked").unwrap();
         assert!(state::locks(&open().state).is_empty());
+
+        // Replanning: closed as replanned only with `**Replanning:**` filled; then it is closed for good.
+        let second = open().by_id("task", "T-0002").unwrap().path.clone();
+        fs::write(&second, read(&second).unwrap().replace("- **Done:**", "- **Done:** half of it")).unwrap();
+        assert!(task_close(&open(), "T-0002", true).err().unwrap().contains("Replanning"));
+        fs::write(&second, read(&second).unwrap() + "- **Replanning:** too big; split into T-0004 and T-0005.
+").unwrap();
+        let (_, report) = task_close(&open(), "T-0002", true).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert_eq!(open().by_id("task", "T-0002").unwrap().get("status"), "replanned");
+        assert!(task_start(&open(), "T-0002", "codex").unwrap_err().contains("replanned"));
+        task_new(&open(), "Smaller", "XS", &[("refs", Some("T-0002"))]).unwrap();
+        let small = open();
+        let small = small.of_kind("task").find(|t| t.title() == "Smaller").unwrap();
+        assert!(small.get("size") == "XS" && small.section("Plan").is_none(), "XS uses the short template");
+        assert!(lint(&open()).errors.is_empty(), "a replanned task can be cited in refs");
 
         // A new module lands in map.md; deleting it takes it out again.
         module_new(&open(), "", "user-auth", "domain", "Sign in").unwrap();
@@ -536,8 +566,9 @@ mod tests {
         assert!(!read(&root.join("mwp/map.md")).unwrap().contains("user-auth"));
 
         // Deleting an open task frees its claim and locks; done tasks and project files are kept.
-        task_start(&open(), "T-0002", "codex").unwrap();
-        let t2 = open().by_id("task", "T-0002").unwrap().path.clone();
+        let small = open().of_kind("task").find(|t| t.title() == "Smaller").unwrap().id().to_string();
+        task_start(&open(), &small, "codex").unwrap();
+        let t2 = open().by_id("task", &small).unwrap().path.clone();
         delete(&open(), &t2).unwrap();
         assert!(!t2.exists() && state::claims(&open().state).is_empty() && state::locks(&open().state).is_empty());
         for kept in ["mwp/constitution.md", "mwp/modules/_template.md"] {
