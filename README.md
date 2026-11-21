@@ -83,7 +83,8 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 | `mwp task start` / `close` / `block` / `review` / `release` | Claims a task and locks its modules for one agent / closes it (or `--replanned`) and runs lint / stops on it / hands it to a person / gives it back |
 | `mwp locks` | Tasks in progress, their agents and locked modules |
 | `mwp context T-0001` | Files the agent will read for a task, with a token estimate |
-| `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json` |
+| `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json`; refuses while two files share an ID |
+| `mwp ledger` | Creates or rebuilds `.mwp/ledger.json` from the project (a missing or broken one is also rebuilt by `mwp next`) |
 | `mwp adr new` / `mwp adr list` | Creates a proposed ADR (optionally superseding one) / lists ADRs |
 | `mwp module new` / `mwp module folder` | Creates a module (optionally in a subfolder) and updates `map.md` / creates a folder for modules |
 | `mwp spec new` | Creates an active SPEC owned by a module or task |
@@ -116,6 +117,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **New task**, **New module**, **New SPEC** and **New ADR** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`, a SPEC gets a module or task as its owner, an ADR can replace one in force.
 - **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
 - **File > New project** creates a project (folder, name, agents, skills), like `mwp init`. **File > Open project** browses for a folder or reopens one of the 5 recent projects, also listed on the start screen.
+- **Settings > Rebuild ID ledger** does what `mwp ledger` does and shows the last ID of each prefix.
 - **Settings > Preferences** sets the theme (dark, light or the system's), the text size (80% to 160%) and the text font (any TrueType or OpenType file; the source editor keeps its monospace font), all applied at once and remembered. It also picks the language of the GUI: English, Brazilian Portuguese, Spanish, Japanese, Korean, Simplified Chinese and Traditional Chinese come with it (Japanese, Korean and Chinese use the system's fonts). Each language is a JSON file in `<config>/mwp-gui/lang/` (on Windows, `%APPDATA%\mwp-gui\lang\`) that maps the English texts to their translation; copy `en.json` to `<code>.json` and translate it to add another, and a text missing from a file stays in English. Messages from the core (lint lines, errors) stay in English.
 - **Help > About** shows the project art, the versions of the GUI and of the core, and the license.
 - The GUI comes back as it was left: window size and place, explorer width, bottom panel height, collapsed sections, editor mode, and each project's open tabs and board filters. The state is kept in `<config>/mwp-gui/` (on Windows, `%APPDATA%\mwp-gui\`); if the file is damaged, the GUI opens with the defaults.

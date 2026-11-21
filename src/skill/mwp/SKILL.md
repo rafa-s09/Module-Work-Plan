@@ -40,7 +40,7 @@ Every file starts with YAML front matter. Read the front matter first; it tells 
 | `AC-1` | Acceptance criterion | Task |
 
 - Project IDs are global, sequential, at least 4 digits, never reused.
-- Get a new one with `mwp next <T|SP|ADR|TEST> --reserve`. `--reserve` records it in the ledger so nobody else gets it, even if the file is later deleted.
+- Get a new one with `mwp next <T|SP|ADR|TEST> --reserve`. `--reserve` records it in the ledger so nobody else gets it, even if the file is later deleted. If it reports duplicate ids, two files share an ID: stop and ask; a person renumbers one by hand, then runs `mwp ledger`.
 - Always search with a word boundary: `\bT-0043\b`. `TEST-0043` contains `T-0043`, `NFR-01` contains `FR-01`.
 - Company work codes (Jira, ticket) live in the task's `external:` field. `mwp context` accepts the external code in place of the task ID, and `mwp task-list` shows it.
 - Refer to files by ID, never by path.
@@ -141,7 +141,8 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 | `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Gives the task back without closing it and frees its locks | Set the status |
 | `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title, external codes and the agent on each task in progress | List `mwp/tasks/open/` |
 | `mwp locks` | Tasks in progress, their agents and the modules they lock | Read the `in_progress` tasks |
-| `mwp next <T\|SP\|ADR\|TEST> [--reserve]` | Next free ID from MWP docs, module test folders and the ledger | Highest existing ID with that prefix, plus one |
+| `mwp next <T\|SP\|ADR\|TEST> [--reserve]` | Next free ID from MWP docs, module test folders and the ledger. Refuses while two files share an ID; rebuilds a missing or broken ledger | Highest existing ID with that prefix, plus one |
+| `mwp ledger` | Creates or rebuilds `.mwp/ledger.json` from the highest ID of each prefix; never lowers a reservation still in it | Write the highest ID of each prefix into `.mwp/ledger.json` |
 | `mwp context <T-XXXX \| code> [--paths \| --cat]` | Files the task loads, with a token estimate; `--cat` prints their contents; `MISSING` for broken references | Constitution + task + files in its front matter |
 | `mwp adr new <title> [--modules a,b] [--supersedes ADR-XXXX]` / `mwp adr list [--status <s>]` | Creates a proposed ADR / lists ADRs | Copy `decisions/_template.md` |
 | `mwp module new <id> --summary <text> [--type domain\|ui\|api\|infra\|lib] [--folder a/b]` | Creates a module from the template, optionally in a subfolder of `modules/`, and updates `map.md`. IDs are unique across folders | Copy `modules/_template.md`, then `mwp remap` |

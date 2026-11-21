@@ -9,6 +9,7 @@ What changed in each version of the CLI and core (`mwp`) and of the desktop edit
 - **Replanning:** `mwp task close T-XXXX --replanned` closes a task whose plan cannot reach the goal: `status: replanned`, moved to `tasks/done/`. It needs `**Replanning:**` in `## Closure`; lint accepts a replanned task in `tasks/done/` and in `refs:`.
 - **Plan approval:** L, XL and XXL tasks carry `plan_approved:`, which only a person sets (in the GUI). `mwp task close` refuses those sizes without it; lint reports a task in review without it, and warns while it is in progress.
 - **`mwp task block` and `mwp task review`:** shortcuts for `mwp task release --status blocked` and `--status review`.
+- **ID ledger:** `mwp next` (and every command or GUI action that takes a new ID) checks `.mwp/ledger.json` first. A missing or broken ledger is rebuilt from the highest ID of each prefix in the project; while two tasks, SPECs or ADRs share an ID it refuses, names the files and suggests a free ID, until one is renumbered by hand. New `mwp ledger` creates or rebuilds it, never below a reservation still in a ledger that reads. Lint warns about a ledger that does not read.
 - **Task dates:** `mwp` and the GUI write `updated:` on each change of status (start, block, review, release, close, plan approval) and `closed:` when a task is closed. An edit by hand does not move them.
 - **Lint:**
   - a module's `code:` or `tests:` path that does not exist yet is a warning, not an error; so is a registered TEST when none of the `tests` paths exists yet;
@@ -20,6 +21,7 @@ What changed in each version of the CLI and core (`mwp`) and of the desktop edit
 ### GUI
 - **Task sizes** in New task and the board filter.
 - **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu). It shows in Done with its own icon and can no longer be dragged.
+- **Settings > Rebuild ID ledger:** runs `mwp ledger` and shows the last ID of each prefix, or why it could not (duplicate IDs).
 - **Approve plan:** the header of an L, XL or XXL task without approval has **Approve plan**, which sets `plan_approved:` to today once `## Plan` is written.
 
 ## mwp 0.3.0 · mwp-gui 0.1.3 (2026-11-16)

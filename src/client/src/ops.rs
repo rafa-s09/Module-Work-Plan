@@ -84,7 +84,7 @@ pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&s
             }
         }
     }
-    let id = format!("T-{:04}", state::allocate(p, "T").map_err(|e| e.to_string())?);
+    let id = format!("T-{:04}", state::allocate(p, "T")?);
     let mut text = template(if matches!(size, "XS" | "S") { "mwp/tasks/open/_template-task-s.md" } else { "mwp/tasks/open/_template-task.md" })?
         .replace("id: <T-XXXX>", &format!("id: {id}"))
         .replace("# <T-XXXX> — <Title>", &format!("# {id} — {title}"));
@@ -273,7 +273,7 @@ pub fn spec_new(p: &Project, title: &str, owner: &str, lifetime: &str) -> Lines 
     if p.by_id("module", owner).is_none() && p.by_id("task", owner).is_none() {
         return Err(format!("owner `{owner}` is not a module or task"));
     }
-    let id = format!("SP-{:04}", state::allocate(p, "SP").map_err(|e| e.to_string())?);
+    let id = format!("SP-{:04}", state::allocate(p, "SP")?);
     let mut text = template("mwp/specs/_template.md")?
         .replace("id: <SP-XXXX>", &format!("id: {id}"))
         .replace("# <SP-XXXX> — <Title>", &format!("# {id} — {title}"));
@@ -380,7 +380,7 @@ pub fn adr_new(p: &Project, title: &str, modules: Option<&str>, supersedes: Opti
         Some(id) => Some(p.by_id("adr", id).ok_or(format!("no adr `{id}`"))?),
         None => None,
     };
-    let id = format!("ADR-{:04}", state::allocate(p, "ADR").map_err(|e| e.to_string())?);
+    let id = format!("ADR-{:04}", state::allocate(p, "ADR")?);
     let date = today();
     let text = template("mwp/decisions/_template.md")?
         .replace("id: <ADR-XXXX>", &format!("id: {id}"))

@@ -83,7 +83,8 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 | `mwp task start` / `close` / `block` / `review` / `release` | Reserva uma task e bloqueia seus módulos para um agente / fecha (ou `--replanned`) e roda o lint / para nela / entrega a uma pessoa / devolve |
 | `mwp locks` | Tasks em andamento, seus agentes e módulos bloqueados |
 | `mwp context T-0001` | Arquivos que o agente vai ler em uma task, com estimativa de tokens |
-| `mwp next <T\|SP\|ADR\|TEST>` | Próximo ID livre, com reserva opcional em `.mwp/ledger.json` |
+| `mwp next <T\|SP\|ADR\|TEST>` | Próximo ID livre, com reserva opcional em `.mwp/ledger.json`; recusa enquanto dois arquivos tiverem o mesmo ID |
+| `mwp ledger` | Cria ou refaz o `.mwp/ledger.json` a partir do projeto (um ausente ou quebrado também é refeito pelo `mwp next`) |
 | `mwp adr new` / `mwp adr list` | Cria um ADR proposto (podendo substituir outro) / lista os ADRs |
 | `mwp module new` / `mwp module folder` | Cria um módulo (podendo ser numa subpasta) e atualiza o `map.md` / cria uma pasta para módulos |
 | `mwp spec new` | Cria uma SPEC ativa, com um módulo ou uma task como dono |
@@ -116,6 +117,7 @@ O `mwp-gui` (versão 0.1.4) é um editor de desktop opcional para a pessoa que a
 - **New task**, **New module**, **New SPEC** e **New ADR** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`, uma SPEC recebe um módulo ou uma task como dono e um ADR pode substituir outro em vigor.
 - **Delete** (cabeçalho do arquivo, botão direito no explorador ou num cartão, menu File) apaga um módulo, uma SPEC ou uma task aberta depois de confirmar; os locks da task são liberados e o `map.md` acompanha os módulos.
 - **File > New project** cria um projeto (pasta, nome, agentes, skills), como o `mwp init`. **File > Open project** procura a pasta ou reabre um dos 5 projetos recentes, que também aparecem na tela inicial.
+- **Settings > Rebuild ID ledger** faz o mesmo que o `mwp ledger` e mostra o último ID de cada prefixo.
 - **Settings > Preferences** define o tema (escuro, claro ou o do sistema), o tamanho do texto (de 80% a 160%) e a fonte do texto (qualquer arquivo TrueType ou OpenType; o editor de código mantém a sua fonte monoespaçada), tudo aplicado na hora e lembrado. Também escolhe o idioma da GUI: inglês, português do Brasil, espanhol, japonês, coreano, chinês simplificado e chinês tradicional vêm junto (japonês, coreano e chinês usam as fontes do sistema). Cada idioma é um arquivo JSON em `<config>/mwp-gui/lang/` (no Windows, `%APPDATA%\mwp-gui\lang\`) que liga os textos em inglês à sua tradução; para outro idioma, copie o `en.json` para `<código>.json` e traduza, e um texto que faltar no arquivo fica em inglês. As mensagens do core (linhas do lint, erros) continuam em inglês.
 - **Help > About** mostra a arte do projeto, as versões da GUI e do core, e a licença.
 - A GUI volta como foi deixada: tamanho e posição da janela, largura do explorador, altura do painel inferior, seções recolhidas, modo do editor, e as abas abertas e os filtros do quadro de cada projeto. O estado fica em `<config>/mwp-gui/` (no Windows, `%APPDATA%\mwp-gui\`); se o arquivo estiver danificado, a GUI abre com o padrão.

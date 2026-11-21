@@ -193,13 +193,17 @@ pub fn contains_id(text: &str, id: &str) -> bool {
 /// Highest number used in MWP docs, module test folders or the ledger, plus one.
 /// Constitution, skill and templates are not scanned: their example IDs are not real.
 pub fn next_id(p: &Project, prefix: &str) -> u64 {
+    used_id(p, prefix).max(crate::state::read_ledger(&p.state).get(prefix).copied().unwrap_or(0)) + 1
+}
+
+/// Highest number of `prefix` used in MWP docs and module test folders (0 if none).
+pub fn used_id(p: &Project, prefix: &str) -> u64 {
     // The constitution, map and glossary cite IDs as examples (`T-0043`), not as used ones.
     let mut files: Vec<PathBuf> = p.docs.iter().filter(|d| !matches!(d.kind(), "constitution" | "map" | "glossary")).map(|d| d.path.clone()).collect();
     for m in p.of_kind("module") {
         files.extend(test_files(p, m));
     }
-    let used = files.iter().filter_map(|f| read(f)).flat_map(|t| ids_in(&t, prefix).collect::<Vec<_>>()).max().unwrap_or(0);
-    used.max(crate::state::read_ledger(&p.state).get(prefix).copied().unwrap_or(0)) + 1
+    files.iter().filter_map(|f| read(f)).flat_map(|t| ids_in(&t, prefix).collect::<Vec<_>>()).max().unwrap_or(0)
 }
 
 /// Every file under a module's `tests:` paths.

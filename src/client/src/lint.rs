@@ -133,6 +133,9 @@ pub fn lint(p: &Project) -> Report {
         r.errors.push("mwp/constitution.md: missing".into());
     }
     project_docs(p, &mut r);
+    if p.state.join("ledger.json").exists() && crate::state::parse_ledger(&p.state).is_none() {
+        r.warnings.push(".mwp/ledger.json: does not read; `mwp next` rebuilds it, or run `mwp ledger`".into());
+    }
     match map_texts(p) {
         Ok((cur, new)) if cur != new => r.errors.push("mwp/map.md: out of date (run `mwp remap` or `mwp map --write`)".into()),
         Err(e) => r.errors.push(e),

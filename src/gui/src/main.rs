@@ -167,6 +167,21 @@ struct App {
 }
 
 impl App {
+    /// Settings > Rebuild ID ledger: `mwp ledger`, then the last ID of each prefix (or why it failed).
+    fn rebuild_ledger(&self) -> Dialog {
+        match Project::open(&self.root).and_then(|p| state::rebuild_ledger(&p)) {
+            Ok(ledger) => {
+                let ids: Vec<String> = ledger.iter().map(|(k, v)| format!("{k}-{v:04}")).collect();
+                let text = if ids.is_empty() { tr("No ID used yet: the ledger is empty.").to_string() } else { format!("{}
+
+{}", tr("Last ID of each prefix:"), ids.join("
+")) };
+                Dialog::Notice { title: tr("ID ledger rebuilt").into(), text }
+            }
+            Err(e) => Dialog::Notice { title: tr("Cannot rebuild the ID ledger").into(), text: e },
+        }
+    }
+
     fn new(root: PathBuf) -> App {
         let mut app = App {
             view: load(&root),
@@ -571,6 +586,11 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.show_problems, tr("Bottom panel (Problems, Search)"));
                 });
                 ui.menu_button(tr("Settings"), |ui| {
+                    let rebuild = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SYNC, tr("Rebuild ID ledger"))));
+                    if rebuild.on_hover_text(tr("Write .mwp/ledger.json again from the highest ID of each prefix, like mwp ledger")).clicked() {
+                        self.dialog = Some(self.rebuild_ledger());
+                    }
+                    ui.separator();
                     if ui.button(ic(ICON_SETTINGS, tr("Preferences…"))).clicked() {
                         self.dialog = Some(Dialog::Settings { lang: self.lang.clone(), langs: i18n::available(), error: String::new() });
                     }

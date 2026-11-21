@@ -54,7 +54,9 @@ Resources (mwp/content/)
   content folder <a/b>                      Create a folder under mwp/content/
 
 IDs and decisions
-  next <T|SP|ADR|TEST> [--reserve]          Next free ID; --reserve records it in .mwp/ledger.json
+  next <T|SP|ADR|TEST> [--reserve]          Next free ID; --reserve records it in .mwp/ledger.json. Refuses
+                                            while two files share an ID; rebuilds a missing or broken ledger
+  ledger                                    Create or rebuild .mwp/ledger.json from the highest ID of each prefix
   adr new <title> [--modules a,b] [--supersedes ADR-XXXX]
                                             Create a proposed ADR (and mark the old one superseded)
   adr list [--status <s>]                   List ADRs
@@ -116,6 +118,7 @@ fn main() -> ExitCode {
         "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all", "--agent", "--replanned"]).and_then(|a| task(&a)),
         "task-list" => Args::parse(rest, &["--status", "--module", "--all"]).and_then(|a| task_list(&a)),
         "locks" => locks(),
+        "ledger" => ledger(),
         "next" => Args::parse(rest, &["--reserve"]).and_then(|a| next(&a)),
         "context" => Args::parse(rest, &["--paths", "--cat"]).and_then(|a| context(&a)),
         "adr" => Args::parse(rest, &["--modules", "--supersedes", "--status"]).and_then(|a| adr(&a)),
@@ -301,13 +304,24 @@ fn locks() -> Res {
     Ok(true)
 }
 
+fn ledger() -> Res {
+    let ledger = state::rebuild_ledger(&Project::find()?)?;
+    let values: Vec<String> = ledger.iter().map(|(k, v)| format!("{k}-{v:04}")).collect();
+    println!("write .mwp/ledger.json (last ids: {})", if values.is_empty() { "none yet".into() } else { values.join(", ") });
+    Ok(true)
+}
+
 fn next(a: &Args) -> Res {
     let prefix = a.pos.first().ok_or("usage: mwp next <T|SP|ADR|TEST> [--reserve]")?;
     if !PREFIXES.contains(&prefix.as_str()) {
         return Err(format!("prefix must be one of {}", PREFIXES.join(", ")));
     }
     let p = Project::find()?;
-    let n = if a.has("--reserve") { state::allocate(&p, prefix).map_err(|e| e.to_string())? } else { next_id(&p, prefix) };
+    // The note goes to stderr: agents read the ID from stdout.
+    if let Some(note) = state::check_ledger(&p)? {
+        eprintln!("{note}");
+    }
+    let n = if a.has("--reserve") { state::allocate(&p, prefix)? } else { next_id(&p, prefix) };
     println!("{prefix}-{n:04}");
     Ok(true)
 }
