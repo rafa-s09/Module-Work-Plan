@@ -34,7 +34,7 @@ updated: <YYYY-MM-DD>
 - Pushing, merging or deploying <unless the task says so>.
 
 ## 4. Versioning (git)
-- Branch: `task/T-XXXX-slug`
+- Branch: `task/<task file name without .md>`, like `task/T-0043-checkout-total`
 - Commit: `T-XXXX: short imperative description`
 - One commit per logical step; the last commit includes the module updates.
 

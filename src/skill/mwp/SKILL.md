@@ -50,7 +50,7 @@ Every file starts with YAML front matter. Read the front matter first; it tells 
 When asked "execute T-0043" (or a company code that maps to it):
 
 1. **Load context.** Run `mwp context T-0043 --paths` and read exactly those files. Load more only when the constitution allows it, and stop as soon as you have enough. Never read the whole `modules/` folder or `tasks/done/`. If it prints `MISSING`, the task cites something that does not exist: stop and ask.
-2. **Claim it:** `mwp task start T-0043 --agent <your agent name>` sets `status: in_progress` and locks the modules in `modules:`. If it fails, another agent holds the task or one of its modules: stop and report, never work around it. Then create the branch `task/T-0043-slug`.
+2. **Claim it:** `mwp task start T-0043 --agent <your agent name>` sets `status: in_progress` and locks the modules in `modules:`. If it fails, another agent holds the task or one of its modules: stop and report, never work around it. Then, if the project uses a valid version control provider (git or another one the constitution names), create a branch named after the task file without `.md` (`task/T-0043-checkout-total` for `T-0043-checkout-total.md`) there; follow the constitution's versioning section, which may forbid version control operations altogether.
 3. **Size L and up:** write the `## Plan` and **stop** until a person approves it: they set `plan_approved:` (never write it yourself). `mwp task close` refuses the task without it. XL: the plan goes into a transient SPEC. XXL: the plan is the list of smaller tasks; create them once approved, never implement the XXL task directly.
 4. **Size M and up:** write the tests first (`mwp next TEST --reserve` for each new ID), run them, confirm they fail for the expected reason. Test names start with their ID: `TEST-0007: ...`.
 5. **Implement**, writing only code that belongs to modules in `modules:`.
@@ -66,11 +66,13 @@ If a `[manual]` criterion could not be checked, list what is missing, run `mwp t
 
 **Rule of 3:** if a test or criterion still fails after 3 fix attempts, stop, report what you tried and your hypothesis, and wait for a person to decide whether to go on or take another route.
 
-**Replanning:** when a person agrees the plan cannot reach the goal, mark each criterion not met `- [-] AC-N ... — failed: <reason>`, fill `**Replanning:**` in `## Closure` (why, and the new tasks), and run `mwp task close T-0043 --replanned`. The new tasks cite it in `refs:`. If you must stop for any other reason, release the task (`--status blocked` or `open`) so its modules are free for other agents.
+**Replanning:** when a person agrees the plan cannot reach the goal, mark each criterion not met `- [-] AC-N ... — failed: <reason>`, fill `**Replanning:**` in `## Closure` (why, and the new tasks), and run `mwp task close T-0043 --replanned`. The new tasks cite it in `refs:`.
+
+If you must stop for any other reason, free the task so its modules are free for other agents: `mwp task block T-0043`, or `mwp task release T-0043` to put it back to open.
 
 ## Creating a task
 
-1. `mwp task new "<title>" --size M --modules order [--reads customer] [--refs T-0042] [--external PROJ-1234]` creates `mwp/tasks/open/T-XXXX-slug.md` with the next ID reserved and today's date. Sizes: XS, S, M, L, XL, XXL (see the constitution); XS and S use the short template. Many `[manual]` criteria or a long verification raise the size.
+1. `mwp task new "<title>" --size M --modules order [--reads customer] [--refs T-0042] [--external PROJ-1234]` creates `mwp/tasks/open/T-XXXX-<title>.md` (the title in lowercase words joined by `-`: "Checkout total" gives `T-0043-checkout-total.md`) with the next ID reserved and today's date. Sizes: XS, S, M, L, XL, XXL (see the constitution); XS and S use the short template. Many `[manual]` criteria or a long verification raise the size.
 2. Fill Goal, Scope and Acceptance criteria. `modules:` lists every module the task may write; a task without it is invalid.
 3. Every criterion says how it is verified. Tasks that change code have at least one `[regression]` and one `[doc]`. Vague criteria ("works well", "clean code") are not allowed.
 4. Run `mwp context T-XXXX`. If the token total is large, or the size is XXL, split the task.
@@ -79,7 +81,7 @@ To see what is pending: `mwp task-list` (or `mwp task list`): open tasks, `--sta
 
 ## Recording a decision
 
-- `mwp adr new "<title>" --modules order` creates `ADR-XXXX-slug.md` as `proposed`. Fill in Context, Decision and Consequences.
+- `mwp adr new "<title>" --modules order` creates `ADR-XXXX-<title>.md` as `proposed`. Fill in Context, Decision and Consequences.
 - Replacing a decision: `mwp adr new "<title>" --supersedes ADR-0002`. The old ADR is set to `superseded` with `superseded_by:`. Both changes belong to the same task.
 - Only a person sets `accepted`. Never edit the body of an accepted ADR; factual fixes go in `## Amendments`.
 - `mwp adr list [--status accepted]` shows the decisions in force.
@@ -129,14 +131,14 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 
 | Command | What it does | Without the CLI |
 |---|---|---|
-| `mwp init [dir] [--agent a,b] [--name <n>] [--no-skill]` | Creates `mwp/`, `AGENTS.md` and, for each agent (`claude`, `codex`, `cursor`, `gemini`, `copilot`; default `claude`), its instruction file and this skill; never overwrites | Copy the templates |
+| `mwp init [dir] [--agent a,b] [--name <n>] [--template <name>] [--no-skill]` | Creates `mwp/`, `AGENTS.md` and, for each agent (`claude`, `codex`, `cursor`, `gemini`, `copilot`; default `claude`), its instruction file and this skill, from a template package (`default` unless `--template` names another installed one); never overwrites | Copy the templates |
 | `mwp init --update-skills [--agent a,b]` | Rewrites only the skills with the installed CLI's version | Copy the `SKILL.md` files |
-| `mwp lint [--strict]` | Checks front matter (a file without it is an error), IDs, references, closures, registered tests, map, size limits. Exit 1 on errors (`--strict`: also on warnings) | Check by reading the files |
+| `mwp lint [--strict]` | Checks front matter (a file without it is an error), IDs, references, closures, registered tests, map, size limits, `mwp_version` against the installed mwp, `plan_approved:` on L/XL/XXL tasks, `- [-]` marks on replanned and done tasks, the `kind:` of PROJECT, constitution, map and glossary, and a ledger that does not read. Exit 1 on errors (`--strict`: also on warnings) | Check by reading the files |
 | `mwp map [--write \| --check]` | Prints the module table; `--write` updates `map.md`; `--check` fails if it is stale | Rebuild the table between the markers from module front matter |
 | `mwp remap [--dry-run]` | Rechecks modules (paths, `depends_on`, registered tests) and updates `map.md` | Same checks by hand, then rebuild the table |
 | `mwp task new <title> [--size XS\|S\|M\|L\|XL\|XXL] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]` | Creates an open task from the template with the next T- ID reserved | `mwp next T --reserve` and copy the task template |
 | `mwp task start <T-XXXX> [--agent <name>]` | Claims the task and locks its modules; fails if another agent holds them. `MWP_AGENT` is the default name | Set `status: in_progress` |
-| `mwp task close <T-XXXX> [--replanned]` | Sets `status: done` (or `replanned`), moves the file to `tasks/done/`, frees the locks, runs lint. Refuses an empty `## Closure`, and `--replanned` without `**Replanning:**` | Set the status, move the file, check by reading |
+| `mwp task close <T-XXXX> [--replanned]` | Sets `status: done` (or `replanned`), moves the file to `tasks/done/`, frees the locks, runs lint. Refuses an empty `## Closure`, an L, XL or XXL task without `plan_approved:` (unless `--replanned`), and `--replanned` without `**Replanning:**` | Set the status, move the file, check by reading |
 | `mwp task block <T-XXXX>` / `mwp task review <T-XXXX>` | Stops on the task (`blocked`) or hands it to a person (`review`); frees its locks | Set the status |
 | `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Gives the task back without closing it and frees its locks | Set the status |
 | `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title, external codes and the agent on each task in progress | List `mwp/tasks/open/` |
