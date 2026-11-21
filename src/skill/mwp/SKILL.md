@@ -5,7 +5,7 @@ description: Work in a project documented with MWP (Module Work Plan). Use when 
 
 # MWP — Module Work Plan
 
-> Draft. If the `mwp` CLI is not installed, use the manual equivalent listed for each command.
+> If the `mwp` CLI is not installed, use the manual equivalent listed for each command.
 
 `mwp/constitution.md` is the source of truth for the project's rules. This skill explains **how** to work with the format; if it disagrees with the constitution, the constitution wins.
 

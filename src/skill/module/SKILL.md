@@ -5,7 +5,7 @@ description: Create or audit MWP modules from the code. Use when a project has c
 
 # MWP modules from the code
 
-> Draft. Follow `mwp/constitution.md` and the `mwp` skill for everything not covered here.
+> Follow `mwp/constitution.md` and the `mwp` skill for everything not covered here.
 
 A module describes how a part of the system works **today**. This skill builds modules from the code (**create**) or checks existing modules against the code and the ADRs (**audit**). Both end with a report.
 

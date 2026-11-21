@@ -3,6 +3,7 @@ kind: project
 mwp_version: 2
 name: <Project name>
 language: <en>
+created: <YYYY-MM-DD>
 ---
 
 # <Project name>

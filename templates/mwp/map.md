@@ -1,3 +1,7 @@
+---
+kind: map
+---
+
 # Module map
 
 > One line per module, generated from module front matter. Do not edit the table by hand:

@@ -1,3 +1,8 @@
+---
+kind: constitution
+updated: <YYYY-MM-DD>
+---
+
 # Constitution
 
 > Rules every agent follows in this project. Replace the `<placeholders>` with this project's rules.
