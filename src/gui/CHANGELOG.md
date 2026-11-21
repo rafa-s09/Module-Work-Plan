@@ -4,8 +4,9 @@ What changed in each version of the desktop editor.
 
 ## Unreleased
 
-- **Task sizes:** XS, S, M, L, XL and XXL in New task and the board filter. XS uses the short template like S; L and up need an approved plan; XL puts the plan in a SPEC (also for tasks with many manual checks); an XXL plan splits it into smaller tasks.
+- **Task sizes:** XS, S, M, L, XL and XXL in New task and the board filter. XS (a trivial change, like bumping a version) uses the short template like S; L and up need an approved plan; XL puts the plan in a SPEC (also for tasks with many manual checks); an XXL task (too big, or far outside the project's field) has a plan that splits it into smaller tasks.
 - **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu), like `mwp task close --replanned`. It needs `**Replanning:**` in `## Closure`, moves to `tasks/done/` and shows in Done with its own icon.
+- **Approve plan:** L, XL and XXL tasks get `plan_approved:`. The task header has **Approve plan**, which sets it to today once `## Plan` is written; only a person approves a plan, so the CLI has no such command. `mwp task close` refuses those sizes without it, and lint flags a task in review without it (a warning while in progress).
 - **Lint:** a module's `code:` or `tests:` path that does not exist yet is a warning, not an error; so is a registered TEST when none of the `tests` paths exists yet.
 
 ## 0.1.3 (2026-11-16)

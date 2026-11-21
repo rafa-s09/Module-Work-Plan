@@ -1,7 +1,7 @@
 //! Operations that change the project. They return the lines to show; nothing here prints.
 
 use crate::doc::{map_texts, parse_list, read, set_field, slug, today, Doc, Project};
-use crate::lint::{closed, field_filled, has_content, lint, Report, MODULE_TYPES, SIZES};
+use crate::lint::{closed, field_filled, has_content, lint, needs_plan, Report, MODULE_TYPES, SIZES};
 use crate::scaffold::template;
 use crate::state;
 use std::fs;
@@ -123,6 +123,9 @@ pub fn task_close(p: &Project, key: &str, replanned: bool) -> Result<(Vec<String
     }
     if !t.section("Closure").is_some_and(has_content) {
         return Err(format!("{id}: fill `## Closure` with the evidence for every criterion before closing"));
+    }
+    if !replanned && needs_plan(t.get("size")) && t.get("plan_approved").is_empty() {
+        return Err(format!("{id}: size {} needs `plan_approved:`; a person approves `## Plan` first", t.get("size")));
     }
     if replanned && !t.section("Closure").is_some_and(|c| field_filled(c, "Replanning")) {
         return Err(format!("{id}: fill `**Replanning:**` in `## Closure` with why the plan failed and the new tasks"));
@@ -390,6 +393,25 @@ pub fn adr_new(p: &Project, title: &str, modules: Option<&str>, supersedes: Opti
     Ok(lines)
 }
 
+/// A person approves the `## Plan` of an L, XL or XXL task: sets `plan_approved:` to today.
+/// Like deciding an ADR, only a person does it, so the CLI agents use has no such command.
+pub fn plan_approve(p: &Project, key: &str) -> Lines {
+    let t = find_task(p, key)?;
+    let id = t.id();
+    if !needs_plan(t.get("size")) {
+        return Err(format!("{id} is size {}: only L, XL and XXL need an approved plan", t.get("size")));
+    }
+    if closed(t.get("status")) {
+        return Err(format!("{id} is {}", t.get("status")));
+    }
+    if !t.section("Plan").is_some_and(has_content) {
+        return Err(format!("{id}: `## Plan` is empty; the agent writes it first"));
+    }
+    let text = read(&t.path).ok_or("cannot read the task")?;
+    write(&t.path, set_field(&text, "plan_approved", &today()))?;
+    Ok(vec![format!("update {} (plan_approved: {})", p.rel(&t.path), today())])
+}
+
 /// A person accepts or rejects a proposed ADR: sets `status` and `date`. The body is not touched.
 pub fn adr_decide(p: &Project, id: &str, status: &str) -> Lines {
     if !matches!(status, "accepted" | "rejected") {
@@ -486,6 +508,24 @@ mod tests {
         task_start(&open(), "T-0002", "codex").unwrap();
         task_release(&open(), "T-0002", "blocked").unwrap();
         assert!(state::locks(&open().state).is_empty());
+
+        // An L task closes only with its plan approved, and only a written plan can be approved.
+        task_new(&open(), "Big one", "L", &[("modules", Some("order"))]).unwrap();
+        let big = open().of_kind("task").find(|t| t.title() == "Big one").unwrap().id().to_string();
+        task_start(&open(), &big, "claude").unwrap();
+        assert!(lint(&open()).warnings.iter().any(|w| w.contains("plan_approved")));
+        let big_path = open().by_id("task", &big).unwrap().path.clone();
+        fs::write(&big_path, read(&big_path).unwrap().replace("- **Done:**", "- **Done:** all of it")).unwrap();
+        assert!(task_close(&open(), &big, false).err().unwrap().contains("plan_approved"));
+        assert!(plan_approve(&open(), &big).unwrap_err().contains("Plan"));
+        assert!(plan_approve(&open(), "T-0002").unwrap_err().contains("size M"));
+        fs::write(&big_path, read(&big_path).unwrap().replace("## Plan
+", "## Plan
+1. Do it.
+")).unwrap();
+        plan_approve(&open(), &big).unwrap();
+        assert_eq!(open().by_id("task", &big).unwrap().get("plan_approved"), today());
+        task_close(&open(), &big, false).unwrap();
 
         // Replanning: closed as replanned only with `**Replanning:**` filled; then it is closed for good.
         let second = open().by_id("task", "T-0002").unwrap().path.clone();

@@ -51,7 +51,7 @@ When asked "execute T-0043" (or a company code that maps to it):
 
 1. **Load context.** Run `mwp context T-0043 --paths` and read exactly those files. Load more only when the constitution allows it, and stop as soon as you have enough. Never read the whole `modules/` folder or `tasks/done/`. If it prints `MISSING`, the task cites something that does not exist: stop and ask.
 2. **Claim it:** `mwp task start T-0043 --agent <your agent name>` sets `status: in_progress` and locks the modules in `modules:`. If it fails, another agent holds the task or one of its modules: stop and report, never work around it. Then create the branch `task/T-0043-slug`.
-3. **Size L and up:** write the `## Plan` and **stop** until a person approves it. XL: the plan goes into a transient SPEC. XXL: the plan is the list of smaller tasks; create them once approved, never implement the XXL task directly.
+3. **Size L and up:** write the `## Plan` and **stop** until a person approves it: they set `plan_approved:` (never write it yourself). `mwp task close` refuses the task without it. XL: the plan goes into a transient SPEC. XXL: the plan is the list of smaller tasks; create them once approved, never implement the XXL task directly.
 4. **Size M and up:** write the tests first (`mwp next TEST --reserve` for each new ID), run them, confirm they fail for the expected reason. Test names start with their ID: `TEST-0007: ...`.
 5. **Implement**, writing only code that belongs to modules in `modules:`.
 6. **Verify** every acceptance criterion:
@@ -109,6 +109,8 @@ To create modules for code that has none, or to check existing modules against t
 - **One writer per module.** Other agents may be working in this project. Never write a module locked by another task, and never edit `.mwp/` by hand.
 
 ## Stop and ask when
+
+These are brakes, not punishments: they prevent excess and work outside the scope, and save effort for you and for the people working with you.
 
 - The task contradicts a module, a durable SPEC or an accepted ADR.
 - The code contradicts its module.

@@ -27,7 +27,7 @@ use tabs::*;
 use eframe::egui::{self, Color32, RichText};
 use egui_material_icons::{icons::*, MaterialIcon};
 use mwp_core::doc::{id_num, slug, walk, Doc, Project};
-use mwp_core::lint::{closed, lint, Report};
+use mwp_core::lint::{closed, lint, needs_plan, Report};
 use mwp_core::ops;
 use mwp_core::scaffold::{self, AGENTS};
 use mwp_core::state::{self, Claim};

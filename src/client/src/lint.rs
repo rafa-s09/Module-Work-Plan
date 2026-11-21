@@ -47,6 +47,11 @@ const ENUMS: [(&str, &str, &[&str]); 6] = [
 /// Task sizes, smallest first. XS and S use the short template; L and up need an approved plan.
 pub const SIZES: [&str; 6] = ["XS", "S", "M", "L", "XL", "XXL"];
 
+/// Sizes whose `## Plan` a person approves (`plan_approved:`) before the task is implemented.
+pub fn needs_plan(size: &str) -> bool {
+    matches!(size, "L" | "XL" | "XXL")
+}
+
 /// A closed task lives in `tasks/done/`: finished (`done`) or given up for new tasks (`replanned`).
 pub fn closed(status: &str) -> bool {
     matches!(status, "done" | "replanned")
@@ -154,6 +159,15 @@ fn check_task(p: &Project, d: &Doc, r: &mut Report) {
     }
     if closed(status) && !d.section("Closure").is_some_and(has_content) {
         r.err(p, d, format!("status is {status} but `## Closure` is empty"));
+    }
+    // Done tasks are history (some predate the field): only open work is checked.
+    if needs_plan(d.get("size")) && d.get("plan_approved").is_empty() {
+        let msg = format!("size {} needs `plan_approved:`, set when a person approves `## Plan`", d.get("size"));
+        match status {
+            "review" => r.err(p, d, msg),
+            "in_progress" => r.warn(p, d, format!("{msg}; write the plan and stop for approval")),
+            _ => {}
+        }
     }
     if status == "replanned" && !d.section("Closure").is_some_and(|c| field_filled(c, "Replanning")) {
         r.err(p, d, "status is replanned but `**Replanning:**` in `## Closure` is empty".into());

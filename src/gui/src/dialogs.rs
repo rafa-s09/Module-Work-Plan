@@ -11,12 +11,12 @@ pub const MODULE_TYPES: [(&str, &str); 5] = [
     ("lib", "Code shared by several modules"),
 ];
 pub const SIZES: [(&str, &str); 6] = [
-    ("XS", "Extra small: a trivial fix, no new rule"),
+    ("XS", "Extra small: a trivial change, like bumping a version"),
     ("S", "Small: a few lines, one module"),
     ("M", "Medium: a feature in one or two modules"),
     ("L", "Large: several modules, plan first"),
     ("XL", "Extra large: several modules or many manual checks; the plan goes into a SPEC"),
-    ("XXL", "Too big for one task: the plan splits it into smaller tasks"),
+    ("XXL", "Too big for one task, or far outside the project's field: the plan splits it into smaller tasks"),
 ];
 
 pub enum Dialog {

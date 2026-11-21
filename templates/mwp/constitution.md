@@ -65,6 +65,8 @@ If a `[manual]` criterion could not be verified: `status: review`, list what is 
 **Replanning.** When the plan cannot reach the goal and a person agrees to replan: mark each criterion not met `- [-] AC-N ... — failed: <reason>`, fill `## Closure` with `**Replanning:**` (why the plan failed and the new tasks), and close with `mwp task close T-XXXX --replanned` (`status: replanned`, moved to `tasks/done/`). The new tasks cite it in `refs:`.
 
 ## 8. Conflicts — priority order
+> The stop rules here and in §5 are brakes, not punishments: they prevent excess and work outside the scope. Following them saves effort for the agent and for the people working with it.
+
 1. `constitution.md`
 2. Accepted ADRs
 3. Module (including durable SPECs and registered TESTs)
@@ -84,12 +86,13 @@ If a `[manual]` criterion could not be verified: `status: review`, list what is 
 
 ## 10. Task sizes
 Size by the work **and** by the effort to verify it: many `[manual]` criteria or a long verification raise the size.
+Only a person sets `plan_approved:`; an agent never writes it. `mwp task close` refuses an L, XL or XXL task without it.
 
 | Size | When | Rule |
 |---|---|---|
-| XS | A trivial fix, no new rule | Short template; no test first |
+| XS | A trivial change, like bumping a version | Short template; no test first |
 | S | A few lines, one module | Short template |
 | M | A feature in one or two modules | Test first |
-| L | Several modules | Test first; `## Plan` approved by a person before implementing |
+| L | Several modules | Test first; `## Plan` approved by a person (`plan_approved:`) before implementing |
 | XL | Several modules, or many `[manual]` criteria, or a long verification | As L, and the plan goes into a transient SPEC |
-| XXL | Too big for one task | The plan is the list of smaller tasks; a person approves it, and the XXL task is not implemented directly |
+| XXL | Too big for one task, or far outside the project's field | The plan is the list of smaller tasks; a person approves it, and the XXL task is not implemented directly |

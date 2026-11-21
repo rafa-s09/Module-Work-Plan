@@ -11,6 +11,8 @@ pub enum TaskCmd {
     Close(String),
     /// Close as replanned: the plan failed and new tasks take over.
     Replan(String),
+    /// A person approves the task's `## Plan` (`plan_approved:`).
+    ApprovePlan(String),
     Release(String, &'static str),
 }
 
@@ -42,6 +44,13 @@ pub fn task_buttons(ui: &mut egui::Ui, t: &Doc, cmd: &mut Option<TaskCmd>) {
     }
     if status != "open" && ui.button(ic(ICON_ALT_ROUTE, tr("Replan"))).on_hover_text(tr(REPLAN_HINT)).clicked() {
         *cmd = Some(TaskCmd::Replan(id.to_string()));
+    }
+    // Only a person approves a plan, so this sits in the GUI and not in the CLI agents use.
+    if needs_plan(t.get("size")) && t.get("plan_approved").is_empty() {
+        let approve = egui::Button::new(ic(ICON_TASK_ALT, tr("Approve plan"))).fill(ui.visuals().selection.bg_fill);
+        if ui.add(approve).on_hover_text(tr("Set plan_approved: today. Only a person approves the plan; then the agent implements it")).clicked() {
+            *cmd = Some(TaskCmd::ApprovePlan(id.to_string()));
+        }
     }
     ui.menu_button(ic(ICON_SWAP_HORIZ, tr("Status")), |ui| task_status_items(ui, id, status, cmd));
     if status != "in_progress" {
@@ -321,7 +330,7 @@ impl App {
     /// Start asks for the agent; Close and the status changes run at once. A task with unsaved
     /// edits is left alone: the step rewrites (or moves) its file.
     pub fn run_task_cmd(&mut self, cmd: TaskCmd) {
-        let (TaskCmd::Start(id) | TaskCmd::Close(id) | TaskCmd::Replan(id) | TaskCmd::Release(id, _)) = &cmd;
+        let (TaskCmd::Start(id) | TaskCmd::Close(id) | TaskCmd::Replan(id) | TaskCmd::ApprovePlan(id) | TaskCmd::Release(id, _)) = &cmd;
         let Some((path, modules)) = self.view.as_ref().ok().and_then(|v| v.project.by_id("task", id)).map(|t| (t.path.clone(), t.list("modules"))) else { return };
         let notice = |title: String, text: String| Some(Dialog::Notice { title, text });
         if self.tabs.iter().any(|e| e.path == path && e.dirty()) {
@@ -350,6 +359,10 @@ impl App {
                     self.reload();
                 }
                 Err(e) => self.dialog = notice(trf("Cannot close {id}", &[("id", id)]), e),
+            },
+            TaskCmd::ApprovePlan(id) => match project.and_then(|p| ops::plan_approve(&p, &id)) {
+                Ok(_) => self.reload(),
+                Err(e) => self.dialog = notice(trf("Cannot change {id}", &[("id", &id)]), e),
             },
             TaskCmd::Release(id, status) => match project.and_then(|p| ops::task_release(&p, &id, status)) {
                 Ok(_) => self.reload(),
