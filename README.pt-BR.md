@@ -83,6 +83,7 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 | `mwp task start` / `close` / `block` / `review` / `release` | Reserva uma task e bloqueia seus módulos para um agente / fecha (ou `--replanned`) e roda o lint / para nela / entrega a uma pessoa / devolve |
 | `mwp locks` | Tasks em andamento, seus agentes e módulos bloqueados |
 | `mwp context T-0001` | Arquivos que o agente vai ler em uma task, com estimativa de tokens |
+| `mwp upgrade [--dry-run]` | Atualiza um projeto feito com um mwp mais antigo (versão, cabeçalhos, arquivos `_template`, skills) e lista as seções da constituição que faltam |
 | `mwp next <T\|SP\|ADR\|TEST>` | Próximo ID livre, com reserva opcional em `.mwp/ledger.json`; recusa enquanto dois arquivos tiverem o mesmo ID |
 | `mwp ledger` | Cria ou refaz o `.mwp/ledger.json` a partir do projeto (um ausente ou quebrado também é refeito pelo `mwp next`) |
 | `mwp adr new` / `mwp adr list` | Cria um ADR proposto (podendo substituir outro) / lista os ADRs |
@@ -112,7 +113,7 @@ O `mwp-gui` (versão 0.1.4) é um editor de desktop opcional para a pessoa que a
 - **Context** no cabeçalho de uma task: o que um agente carrega para a task (constituição, task, módulos, SPECs, ADRs e tasks citados), com a estimativa de tokens e os IDs citados que não existem em vermelho, como o `mwp context`.
 - **Quadro** das tasks por status; um cartão abre a task. **Start**, **Status**, **Close** e **Replan** (cabeçalho da task, ou botão direito num cartão) fazem o mesmo que `mwp task start`, `release`, `close` e `close --replanned`: reserva e locks dos módulos, a mudança para `tasks/done/`, a conferência do `## Closure`. Tasks replanejadas aparecem em Done com ícone próprio. Numa task L, XL ou XXL, **Approve plan** define `plan_approved:`; só uma pessoa aprova um plano, por isso o CLI não tem esse comando, e o `mwp task close` recusa esses tamanhos sem ele. Arrastar um cartão para outra coluna faz o mesmo: In progress abre o Start, Open / Blocked / Review fazem o release, Done faz o Close; a coluna que aceita o cartão fica destacada. Filtros acima das colunas mostram só os cartões por título, ID ou código de trabalho, módulo, agente e tamanho.
 - **Accept** e **Reject** no cabeçalho de um ADR proposto definem o seu status (só uma pessoa decide um ADR, por isso o CLI não tem esse comando).
-- **File > Project agents** adiciona agentes ao projeto aberto (o arquivo de instruções e as skills, como o `mwp init --agent`) e atualiza as skills dos agentes já configurados (como o `mwp init --update-skills`); arquivos existentes nunca são sobrescritos.
+- **Settings > Project agents** adiciona agentes ao projeto aberto (o arquivo de instruções e as skills, como o `mwp init --agent`) e atualiza as skills dos agentes já configurados (como o `mwp init --update-skills`); arquivos existentes nunca são sobrescritos.
 - **Problemas** do `mwp lint`; uma linha abre o arquivo. Um `map.md` desatualizado ganha o botão **Update map.md**, como o `mwp remap`.
 - **New task**, **New module**, **New SPEC** e **New ADR** (menu File, o **+** da seção no explorador, o quadro) criam o arquivo a partir do template com o próximo ID livre; um módulo novo entra no `map.md`, uma SPEC recebe um módulo ou uma task como dono e um ADR pode substituir outro em vigor.
 - **Delete** (cabeçalho do arquivo, botão direito no explorador ou num cartão, menu File) apaga um módulo, uma SPEC ou uma task aberta depois de confirmar; os locks da task são liberados e o `map.md` acompanha os módulos.
@@ -124,7 +125,9 @@ O `mwp-gui` (versão 0.1.4) é um editor de desktop opcional para a pessoa que a
 
 Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram.
 
-Instale com a opção `--gui` / `-Gui` do instalador. O instalador também coloca o `templates.tar.zst` ao lado do `mwp` e do `mwp-gui`: os dois leem dele os templates do `mwp init` e das novas tasks, módulos, SPECs e ADRs. Um `cargo install --path src/gui --locked` sozinho deixa esse arquivo na pasta do build (`target/release/`), então copie-o para o lado do binário.
+Instale com a opção `--gui` / `-Gui` do instalador. O instalador também coloca os pacotes de template (`default.tar.zst` e qualquer outro `<nome>.tar.zst`) ao lado do `mwp` e do `mwp-gui`: os dois leem deles os templates do `mwp init` e das novas tasks, módulos, SPECs e ADRs. Um `cargo install --path src/gui --locked` sozinho deixa esses arquivos na pasta do build (`target/release/`), então copie-os para o lado do binário.
+
+**Pacotes de template.** Cada pasta em `templates/` vira `<pasta>.tar.zst`, com um `manifest.json` (nome, criação, criador, idioma, detalhes, repositório) e um `thumbs.png` de 512×512. O `default` é o projeto inteiro; outro pacote traz só os arquivos que ele preenche do seu jeito (PROJECT.md, a constituição, o glossário...) e pega o resto do `default`. Escolha com `mwp init --template <nome>` ou no diálogo de novo projeto da GUI. Um projeto feito com um mwp mais antigo é atualizado com `mwp upgrade` (`--dry-run` mostra o que mudaria).
 
 Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`. O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md).
 

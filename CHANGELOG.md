@@ -10,6 +10,10 @@ What changed in each version of the CLI and core (`mwp`) and of the desktop edit
 - **Plan approval:** L, XL and XXL tasks carry `plan_approved:`, which only a person sets (in the GUI). `mwp task close` refuses those sizes without it; lint reports a task in review without it, and warns while it is in progress.
 - **`mwp task block` and `mwp task review`:** shortcuts for `mwp task release --status blocked` and `--status review`.
 - **ID ledger:** `mwp next` (and every command or GUI action that takes a new ID) checks `.mwp/ledger.json` first. A missing or broken ledger is rebuilt from the highest ID of each prefix in the project; while two tasks, SPECs or ADRs share an ID it refuses, names the files and suggests a free ID, until one is renumbered by hand. New `mwp ledger` creates or rebuilds it, never below a reservation still in a ledger that reads. Lint warns about a ledger that does not read.
+- **Template packages:** `templates.tar.zst` becomes `default.tar.zst`, and every folder of `templates/` is packed as `<folder>.tar.zst` with a `manifest.json` (name, created, creator, language, details, repository) and a 512×512 `thumbs.png`. A package other than `default` carries only the files it changes and takes the rest from `default`. `mwp init --template <name>` picks one; the installers copy every package and remove the old `templates.tar.zst`.
+- **`mwp_version`:** a new project records the version of the mwp that made it (`0.3.1`). Lint reports a project written for a newer mwp (an error: update mwp) or an older one (a warning: run `mwp upgrade`).
+- **`mwp upgrade [--dry-run]`:** brings an older project up to this mwp: `mwp_version`, `created:` (from the earliest task), the front matter of the constitution, map and glossary, the `_template` files and the agents' skills, keeping each file's line endings. The constitution's text is left alone; it lists the sections of the current rules it lacks.
+- **`[-]` marks:** lint warns about a replanned task with no criterion marked `- [-]`, and a done task with one.
 - **Task dates:** `mwp` and the GUI write `updated:` on each change of status (start, block, review, release, close, plan approval) and `closed:` when a task is closed. An edit by hand does not move them.
 - **Lint:**
   - a module's `code:` or `tests:` path that does not exist yet is a warning, not an error; so is a registered TEST when none of the `tests` paths exists yet;
@@ -21,6 +25,8 @@ What changed in each version of the CLI and core (`mwp`) and of the desktop edit
 ### GUI
 - **Task sizes** in New task and the board filter.
 - **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu). It shows in Done with its own icon and can no longer be dragged.
+- **New project** has a **Template** choice, with each package's name, details and thumbnail; the dialog scrolls when the window is short.
+- **Settings > Project agents:** moved from the File menu, next to Rebuild ID ledger.
 - **Settings > Rebuild ID ledger:** runs `mwp ledger` and shows the last ID of each prefix, or why it could not (duplicate IDs).
 - **Approve plan:** the header of an L, XL or XXL task without approval has **Approve plan**, which sets `plan_approved:` to today once `## Plan` is written.
 

@@ -19,8 +19,17 @@ pub const SIZES: [(&str, &str); 6] = [
     ("XXL", "Too big for one task, or far outside the project's field: the plan splits it into smaller tasks"),
 ];
 
+/// A template package in the New project dialog: its name, and the label, details and
+/// thumbnail from its `manifest.json` and `thumbs.png`.
+pub struct Template {
+    pub name: String,
+    pub label: String,
+    pub details: String,
+    pub thumb: Option<egui::TextureHandle>,
+}
+
 pub enum Dialog {
-    New { dir: String, name: String, agents: Vec<bool>, skills: bool, error: String },
+    New { dir: String, name: String, agents: Vec<bool>, skills: bool, template: String, templates: Vec<Template>, error: String },
     Open { dir: String, error: String },
     NewTask { title: String, size: &'static str, modules: Vec<(String, bool)>, error: String },
     /// `folder` is where it goes under mwp/modules/, as `a/b`; empty for the top.
@@ -53,8 +62,19 @@ pub enum Dialog {
 }
 
 impl App {
-    pub fn new_project_dialog(&self) -> Dialog {
-        Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, error: String::new() }
+    pub fn new_project_dialog(&self, ctx: &egui::Context) -> Dialog {
+        let templates = scaffold::packages().into_iter().map(|name| {
+            let files = scaffold::package(&name).unwrap_or_default();
+            let manifest: serde_json::Value = files.get("manifest.json").and_then(|b| serde_json::from_slice(b).ok()).unwrap_or_default();
+            let text = |k: &str| manifest.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let thumb = files.get("thumbs.png").and_then(|png| eframe::icon_data::from_png_bytes(png).ok()).map(|i| {
+                let image = egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba);
+                ctx.load_texture(format!("template-{name}"), image, egui::TextureOptions::LINEAR)
+            });
+            let label = if text("name").is_empty() { name.clone() } else { text("name") };
+            Template { label, details: text("details"), thumb, name }
+        }).collect();
+        Dialog::New { dir: self.root.display().to_string(), name: folder_name(&self.root), agents: AGENTS.iter().map(|a| a.id == "claude").collect(), skills: true, template: scaffold::DEFAULT.into(), templates, error: String::new() }
     }
 
     /// About, with assets/icone/help_art.png decoded into a texture.
@@ -417,7 +437,7 @@ impl App {
                         let update = *update && any_here;
                         if ui.add_enabled(!new.is_empty() || update, primary(ui, tr("Apply"))).clicked() {
                             let mut lines = Vec::new();
-                            let done = (if new.is_empty() { Ok(Vec::new()) } else { scaffold::init(&root, None, &new, true) })
+                            let done = (if new.is_empty() { Ok(Vec::new()) } else { scaffold::init(&root, None, &new, true, scaffold::DEFAULT) })
                                 .and_then(|l| {
                                     lines.extend(l);
                                     if update { scaffold::update_skills(&root, &here) } else { Ok(Vec::new()) }
@@ -679,57 +699,82 @@ impl App {
                     });
                 });
             }
-            Dialog::New { dir, name, agents, skills, error } => {
+            Dialog::New { dir, name, agents, skills, template, templates, error } => {
                 egui::Modal::new(egui::Id::unique("new-project")).show(ctx, |ui| {
                     ui.set_width(540.0);
                     dialog_title(ui, ICON_CREATE_NEW_FOLDER, tr("New MWP project"));
                     ui.weak(tr("Creates mwp/ and the files of each agent you choose. Existing files are never overwritten."));
                     ui.add_space(12.0);
 
-                    section(ui, tr("Location"), |ui| {
-                        ui.label(tr("Folder"));
-                        right_row(ui, |ui| {
-                            if ui.button(tr("Browse…")).clicked() {
-                                if let Some(picked) = pick_folder(dir) {
-                                    // Follow the folder name unless the user typed a name of their own.
-                                    if name.trim().is_empty() || *name == folder_name(Path::new(dir.trim())) {
-                                        *name = folder_name(&picked);
+                    // The sections scroll when the window is too short for the whole dialog.
+                    let room = (ctx.content_rect().height() - 220.0).max(200.0);
+                    egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+                        section(ui, tr("Location"), |ui| {
+                            ui.label(tr("Folder"));
+                            right_row(ui, |ui| {
+                                if ui.button(tr("Browse…")).clicked() {
+                                    if let Some(picked) = pick_folder(dir) {
+                                        // Follow the folder name unless the user typed a name of their own.
+                                        if name.trim().is_empty() || *name == folder_name(Path::new(dir.trim())) {
+                                            *name = folder_name(&picked);
+                                        }
+                                        *dir = picked.display().to_string();
                                     }
-                                    *dir = picked.display().to_string();
                                 }
-                            }
-                            ui.add(egui::TextEdit::singleline(dir).hint_text(tr("Folder where mwp/ will be created")).desired_width(f32::INFINITY));
+                                ui.add(egui::TextEdit::singleline(dir).hint_text(tr("Folder where mwp/ will be created")).desired_width(f32::INFINITY));
+                            });
+                            let folder = Path::new(dir.trim());
+                            match () {
+                                _ if dir.trim().is_empty() => ui.weak(tr("Choose where the project lives.")),
+                                _ if folder.join("mwp").is_dir() => ui.colored_label(ui.visuals().warn_fg_color, tr("This folder already has an MWP project: only missing files will be added.")),
+                                _ if folder.is_dir() => ui.weak(tr("mwp/ will be created in this folder.")),
+                                _ => ui.weak(tr("The folder will be created.")),
+                            };
+                            ui.add_space(6.0);
+                            ui.label(tr("Name"));
+                            ui.add(egui::TextEdit::singleline(name).hint_text(tr("Project name")).desired_width(f32::INFINITY));
+                            ui.weak(tr("Written to mwp/PROJECT.md."));
                         });
-                        let folder = Path::new(dir.trim());
-                        match () {
-                            _ if dir.trim().is_empty() => ui.weak(tr("Choose where the project lives.")),
-                            _ if folder.join("mwp").is_dir() => ui.colored_label(ui.visuals().warn_fg_color, tr("This folder already has an MWP project: only missing files will be added.")),
-                            _ if folder.is_dir() => ui.weak(tr("mwp/ will be created in this folder.")),
-                            _ => ui.weak(tr("The folder will be created.")),
-                        };
-                        ui.add_space(6.0);
-                        ui.label(tr("Name"));
-                        ui.add(egui::TextEdit::singleline(name).hint_text(tr("Project name")).desired_width(f32::INFINITY));
-                        ui.weak(tr("Written to mwp/PROJECT.md."));
-                    });
 
-                    section(ui, tr("Agents"), |ui| {
-                        ui.weak(tr("Each agent gets its instruction file and its skills folder."));
-                        ui.add_space(4.0);
-                        egui::Grid::new("agents-grid").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
-                            for (on, a) in agents.iter_mut().zip(AGENTS.iter()) {
-                                ui.checkbox(on, a.name);
-                                ui.weak(format!("{}  ·  {}", a.pointer, a.skills));
-                                ui.end_row();
+                        section(ui, tr("Template"), |ui| {
+                            let cur = templates.iter().find(|t| t.name == *template);
+                            ui.horizontal(|ui| {
+                                if let Some(tex) = cur.and_then(|t| t.thumb.as_ref()) {
+                                    ui.add(egui::Image::new((tex.id(), egui::vec2(64.0, 64.0))));
+                                }
+                                ui.vertical(|ui| {
+                                    let shown = cur.map_or(template.clone(), |t| t.label.clone());
+                                    let r = egui::ComboBox::from_id_salt("template").selected_text(shown).width(240.0).show_ui(ui, |ui| {
+                                        for t in templates.iter() {
+                                            ui.selectable_value(template, t.name.clone(), &t.label);
+                                        }
+                                    });
+                                    r.response.on_hover_text(tr("A template fills PROJECT.md, the constitution and the glossary; the rest is the same in every one."));
+                                    if let Some(t) = cur.filter(|t| !t.details.is_empty()) {
+                                        ui.weak(&t.details);
+                                    }
+                                });
+                            });
+                        });
+
+                        section(ui, tr("Agents"), |ui| {
+                            ui.weak(tr("Each agent gets its instruction file and its skills folder."));
+                            ui.add_space(4.0);
+                            egui::Grid::new("agents-grid").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
+                                for (on, a) in agents.iter_mut().zip(AGENTS.iter()) {
+                                    ui.checkbox(on, a.name);
+                                    ui.weak(format!("{}  ·  {}", a.pointer, a.skills));
+                                    ui.end_row();
+                                }
+                            });
+                            if !agents.iter().any(|on| *on) {
+                                ui.weak(tr("None checked: Claude Code is used."));
                             }
                         });
-                        if !agents.iter().any(|on| *on) {
-                            ui.weak(tr("None checked: Claude Code is used."));
-                        }
-                    });
 
-                    section(ui, tr("Options"), |ui| {
-                        ui.checkbox(skills, tr("Install the agent skills (mwp, module)"));
+                        section(ui, tr("Options"), |ui| {
+                            ui.checkbox(skills, tr("Install the agent skills (mwp, module)"));
+                        });
                     });
 
                     error_line(ui, error);
@@ -741,7 +786,7 @@ impl App {
                             if chosen.is_empty() {
                                 chosen.push(&AGENTS[0]);
                             }
-                            match scaffold::init(&folder, Some(name.trim()).filter(|n| !n.is_empty()), &chosen, *skills) {
+                            match scaffold::init(&folder, Some(name.trim()).filter(|n| !n.is_empty()), &chosen, *skills, template) {
                                 Ok(_) => action = Some(Action::Project(folder, true)),
                                 Err(e) => *error = e,
                             }

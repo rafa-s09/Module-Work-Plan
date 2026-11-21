@@ -142,6 +142,7 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 | `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title, external codes and the agent on each task in progress | List `mwp/tasks/open/` |
 | `mwp locks` | Tasks in progress, their agents and the modules they lock | Read the `in_progress` tasks |
 | `mwp next <T\|SP\|ADR\|TEST> [--reserve]` | Next free ID from MWP docs, module test folders and the ledger. Refuses while two files share an ID; rebuilds a missing or broken ledger | Highest existing ID with that prefix, plus one |
+| `mwp upgrade [--dry-run]` | Brings a project made with an older mwp up to this one; lists constitution sections it lacks. Only when the user asks for it | Ask the user |
 | `mwp ledger` | Creates or rebuilds `.mwp/ledger.json` from the highest ID of each prefix; never lowers a reservation still in it | Write the highest ID of each prefix into `.mwp/ledger.json` |
 | `mwp context <T-XXXX \| code> [--paths \| --cat]` | Files the task loads, with a token estimate; `--cat` prints their contents; `MISSING` for broken references | Constitution + task + files in its front matter |
 | `mwp adr new <title> [--modules a,b] [--supersedes ADR-XXXX]` / `mwp adr list [--status <s>]` | Creates a proposed ADR / lists ADRs | Copy `decisions/_template.md` |

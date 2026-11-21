@@ -22,7 +22,7 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # --force reinstalls, so skill changes reach the binary. A fixed --target-dir keeps the build,
-# where build.rs leaves templates.tar.zst: the binaries read it from their own folder.
+# where build.rs leaves the template packages (default.tar.zst, ...): the binaries read them from their own folder.
 build="$here/../target/install"
 cargo install --path "$here/client" --locked --force --target-dir "$build"
 if [ "$gui" = true ]; then
@@ -30,7 +30,8 @@ if [ "$gui" = true ]; then
 fi
 
 bin="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}/bin"
-cp "$build/release/templates.tar.zst" "$bin/"
+rm -f "$bin/templates.tar.zst"  # the single archive of mwp 0.3.0 and earlier
+cp "$build"/release/*.tar.zst "$bin/"
 if [ -n "$project" ]; then
   "$bin/mwp" init "$project"
 fi

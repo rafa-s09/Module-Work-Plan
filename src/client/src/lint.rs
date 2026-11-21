@@ -161,6 +161,14 @@ fn project_docs(p: &Project, r: &mut Report) {
                 if kind == "project" && !d.fm.contains_key("created") {
                     r.warn(p, d, "no `created:` date".into());
                 }
+                if kind == "project" && !d.get("mwp_version").is_empty() {
+                    let v = d.get("mwp_version");
+                    match (version(v), version(crate::scaffold::VERSION)) {
+                        (Some(theirs), Some(ours)) if theirs > ours => r.err(p, d, format!("written for mwp {v}, newer than this mwp {}: update mwp", crate::scaffold::VERSION)),
+                        (Some(theirs), Some(ours)) if theirs == ours => {}
+                        _ => r.warn(p, d, format!("written for mwp {v}; this is mwp {}: run `mwp upgrade`", crate::scaffold::VERSION)),
+                    }
+                }
             }
             None if path.exists() => r.warnings.push(format!("mwp/{file}: no front matter; start it with `---`, `kind: {kind}`, `---`")),
             None => {}
@@ -171,6 +179,13 @@ fn project_docs(p: &Project, r: &mut Report) {
             r.err(p, d, format!("`kind: {}` belongs only to mwp/{}.md", d.kind(), d.kind()));
         }
     }
+}
+
+/// `0.3.1` as numbers, to compare; None for anything else (older projects say `2`).
+pub fn version(s: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = s.trim().split('.').map(|n| n.parse::<u64>().ok());
+    let v = (parts.next()??, parts.next()??, parts.next()??);
+    parts.next().is_none().then_some(v)
 }
 
 /// `YYYY-MM-DD`, by shape.
@@ -209,6 +224,13 @@ fn check_task(p: &Project, d: &Doc, r: &mut Report) {
             "in_progress" => r.warn(p, d, format!("{msg}; write the plan and stop for approval")),
             _ => {}
         }
+    }
+    // `- [-]` marks a criterion that failed: what a replanned task has, and a done one must not.
+    let failed = d.section("Acceptance criteria").unwrap_or("").lines().any(|l| l.trim_start().starts_with("- [-]"));
+    match status {
+        "replanned" if !failed => r.warn(p, d, "status is replanned but no criterion is marked `- [-]` (failed)".into()),
+        "done" if failed => r.warn(p, d, "status is done but a criterion is marked `- [-]` (failed): replan it, or check it with evidence".into()),
+        _ => {}
     }
     if status == "replanned" && !d.section("Closure").is_some_and(|c| field_filled(c, "Replanning")) {
         r.err(p, d, "status is replanned but `**Replanning:**` in `## Closure` is empty".into());
@@ -287,5 +309,7 @@ mod tests {
         assert!(has_content("- **Done:** added discount\n"));
         assert!(has_content("Free text.\n"));
         assert!(is_date("2026-11-20") && !is_date("<YYYY-MM-DD>") && !is_date("2026-1-20"));
+        assert!(version("0.3.1") == Some((0, 3, 1)) && version("0.10.0") > version("0.9.9"));
+        assert!(version("2").is_none() && version("1.2.3.4").is_none() && version("<mwp version>").is_none());
     }
 }

@@ -10,7 +10,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
 }
 
 # --force reinstalls, so skill changes reach the binary. A fixed --target-dir keeps the build,
-# where build.rs leaves templates.tar.zst: the binaries read it from their own folder.
+# where build.rs leaves the template packages (default.tar.zst, ...): the binaries read them from their own folder.
 $build = Join-Path $PSScriptRoot "..\target\install"
 cargo install --path "$PSScriptRoot\client" --locked --force --target-dir $build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -21,7 +21,8 @@ if ($Gui) {
 
 $root = if ($env:CARGO_INSTALL_ROOT) { $env:CARGO_INSTALL_ROOT } elseif ($env:CARGO_HOME) { $env:CARGO_HOME } else { "$HOME\.cargo" }
 $bin = Join-Path $root "bin"
-Copy-Item (Join-Path $build "release\templates.tar.zst") $bin -Force
+Remove-Item (Join-Path $bin "templates.tar.zst") -ErrorAction SilentlyContinue  # the single archive of mwp 0.3.0 and earlier
+Copy-Item (Join-Path $build "release\*.tar.zst") $bin -Force
 if ($Project) {
     & (Join-Path $bin "mwp.exe") init $Project
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,6 +1,6 @@
 ---
 kind: project
-mwp_version: 2
+mwp_version: <mwp version, set by mwp init>
 name: <Project name>
 language: <en>
 created: <YYYY-MM-DD>

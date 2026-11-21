@@ -122,7 +122,7 @@ struct Asks {
     reveal: Option<(PathBuf, (usize, usize))>,
     /// Accept or reject a proposed ADR: its ID and the new status.
     adr_decide: Option<(String, &'static str)>,
-    /// File > Project agents.
+    /// Settings > Project agents.
     agents: bool,
     /// Rename this file (explorer menu).
     rename: Option<PathBuf>,
@@ -514,7 +514,7 @@ impl eframe::App for App {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(tr("File"), |ui| {
                     if ui.button(ic(ICON_CREATE_NEW_FOLDER, tr("New project…"))).clicked() {
-                        self.dialog = Some(self.new_project_dialog());
+                        self.dialog = Some(self.new_project_dialog(&ctx));
                     }
                     if ui.button(ic(ICON_FOLDER_OPEN, tr("Open project…"))).clicked() {
                         self.dialog = Some(Dialog::Open { dir: self.root.display().to_string(), error: String::new() });
@@ -529,8 +529,6 @@ impl eframe::App for App {
                     ask.new_module = ui.add_enabled(project, egui::Button::new(ic(ICON_EXTENSION, tr("New module…")))).clicked();
                     ask.new_spec = ui.add_enabled(project, egui::Button::new(ic(ICON_ARTICLE, tr("New SPEC…")))).clicked();
                     ask.new_adr = ui.add_enabled(project, egui::Button::new(ic(ICON_GAVEL, tr("New ADR…")))).clicked();
-                    ui.separator();
-                    ask.agents = ui.add_enabled(project, egui::Button::new(ic(ICON_SMART_TOY, tr("Project agents…")))).clicked();
                     ui.separator();
                     let dirty = self.current().is_some_and(Editor::dirty);
                     save = ui.add_enabled(dirty, egui::Button::new(ic(ICON_SAVE, tr("Save"))).shortcut_text(ctx.format_shortcut(&SAVE))).clicked();
@@ -586,6 +584,7 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.show_problems, tr("Bottom panel (Problems, Search)"));
                 });
                 ui.menu_button(tr("Settings"), |ui| {
+                    ask.agents = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SMART_TOY, tr("Project agents…")))).clicked();
                     let rebuild = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SYNC, tr("Rebuild ID ledger"))));
                     if rebuild.on_hover_text(tr("Write .mwp/ledger.json again from the highest ID of each prefix, like mwp ledger")).clicked() {
                         self.dialog = Some(self.rebuild_ledger());
@@ -755,7 +754,7 @@ impl eframe::App for App {
         }
 
         if new_dialog {
-            self.dialog = Some(self.new_project_dialog());
+            self.dialog = Some(self.new_project_dialog(&ctx));
         }
         if open_dialog {
             self.dialog = Some(Dialog::Open { dir: self.root.display().to_string(), error: String::new() });
@@ -973,7 +972,7 @@ mod tests {
     fn explorer_lists_docs_and_flags_broken_ones() {
         let root = std::env::temp_dir().join(format!("mwp-gui-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        scaffold::init(&root, Some("Demo"), &[&AGENTS[0]], false).unwrap();
+        scaffold::init(&root, Some("Demo"), &[&AGENTS[0]], false, scaffold::DEFAULT).unwrap();
         fs::write(root.join("mwp/tasks/open/T-0001-a.md"), "---\nkind: task\nid: T-0001\nstatus: open\nsize: S\nmodules: []\n---\n# T-0001 — Add login\n").unwrap();
         fs::write(root.join("mwp/tasks/open/T-0002-b.md"), "# no front matter\n").unwrap();
 
@@ -1049,7 +1048,7 @@ mod tests {
         let base = std::env::temp_dir().join(format!("mwp-gui-ui-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let root = base.join("app");
-        scaffold::init(&root, Some("Demo"), &[&AGENTS[0]], false).unwrap();
+        scaffold::init(&root, Some("Demo"), &[&AGENTS[0]], false, scaffold::DEFAULT).unwrap();
         let task = root.join("mwp/tasks/open/T-0001-a.md");
         fs::write(&task, "---\nkind: task\nid: T-0001\nstatus: open\nsize: S\nmodules: []\n---\n# T-0001 — Add login\n").unwrap();
 
@@ -1325,8 +1324,8 @@ mod tests {
         assert_eq!(Project::open(&root).unwrap().by_id("adr", "ADR-0002").unwrap().get("status"), "accepted");
         assert!(h.query_by_label_contains("Accept").is_none() && h.query_by_label_contains("Reject").is_none());
 
-        // File > Project agents: add Codex; Claude, already set up, stays checked.
-        h.get_all_by_label("File").next().unwrap().click();
+        // Settings > Project agents: add Codex; Claude, already set up, stays checked.
+        h.get_all_by_label("Settings").next().unwrap().click();
         h.run_steps(3);
         h.get_by_label_contains("Project agents…").click();
         h.run_steps(30);

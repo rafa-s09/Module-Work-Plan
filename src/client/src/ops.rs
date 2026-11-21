@@ -162,6 +162,88 @@ pub fn task_release(p: &Project, key: &str, status: &str) -> Lines {
     Ok(vec![format!("release {id} (status: {status}, locks freed)")])
 }
 
+/// Brings a project written for an older mwp up to this one. Only mechanical changes:
+/// `mwp_version` and `created:` in PROJECT.md, the front matter of the constitution, map and
+/// glossary, the `_template` files (the same in every package), and the agents' skills. The
+/// constitution's text is the project's own: sections of the current rules it lacks are reported,
+/// never written. Each file keeps its line endings. `dry_run` writes nothing.
+pub fn upgrade(p: &Project, dry_run: bool) -> Lines {
+    use crate::scaffold::{installed, project_files, update_skills, DEFAULT, VERSION};
+    let raw = |path: &Path| fs::read_to_string(path).ok();
+    let plain = |s: &str| s.trim_start_matches('\u{feff}').replace("\r\n", "\n");
+    // A file written with CRLF stays CRLF.
+    let eol = |old: &str, new: String| if old.contains("\r\n") { new.replace("\r\n", "\n").replace('\n', "\r\n") } else { new };
+    let mut changes: Vec<(PathBuf, String)> = Vec::new();
+    let mut lines = Vec::new();
+
+    let project = p.mwp.join("PROJECT.md");
+    let old = raw(&project).ok_or("mwp/PROJECT.md not found")?;
+    let text = plain(&old);
+    let mut new = set_field(&text, "mwp_version", VERSION);
+    if !crate::doc::split_front_matter(&text).is_some_and(|(fm, _)| fm.lines().any(|l| l.starts_with("created:"))) {
+        // The earliest task is the best record of when the project began.
+        let created = p.of_kind("task").map(|t| t.get("created").to_string()).filter(|d| crate::lint::is_date(d)).min().unwrap_or_else(today);
+        new = set_field(&new, "created", &created);
+    }
+    if new != text {
+        changes.push((project, eol(&old, new)));
+    }
+
+    for (file, kind) in [("constitution.md", "constitution"), ("map.md", "map"), ("glossary.md", "glossary")] {
+        let path = p.mwp.join(file);
+        let Some(old) = raw(&path) else { continue };
+        let text = plain(&old);
+        let new = match crate::doc::split_front_matter(&text) {
+            None if kind == "constitution" => format!("---\nkind: {kind}\nupdated: {}\n---\n\n{text}", today()),
+            None => format!("---\nkind: {kind}\n---\n\n{text}"),
+            Some((fm, _)) if kind == "constitution" && !fm.lines().any(|l| l.starts_with("updated:")) => set_field(&text, "updated", &today()),
+            Some(_) => continue,
+        };
+        changes.push((path, eol(&old, new)));
+    }
+
+    let current = project_files(DEFAULT)?;
+    for (rel, content) in current.iter().filter(|(rel, _)| rel.rsplit('/').next().is_some_and(|f| f.starts_with("_template"))) {
+        let path = p.root.join(rel);
+        match raw(&path) {
+            Some(old) if plain(&old) == plain(content) => {}
+            Some(old) => changes.push((path, eol(&old, content.clone()))),
+            None => changes.push((path, content.clone())),
+        }
+    }
+
+    let mine = read(&p.mwp.join("constitution.md")).unwrap_or_default();
+    // `## 10. Task sizes`, `## Task sizes` and `## Task sizes (rules)` are the same section.
+    let heading = |l: &str| l.strip_prefix("## ").map(|h| {
+        let h = h.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ' ');
+        h.split(" (").next().unwrap_or(h).trim().to_lowercase()
+    });
+    let have: Vec<String> = mine.lines().filter_map(heading).collect();
+    let rules = current.get("mwp/constitution.md").map(|c| plain(c)).unwrap_or_default();
+    for l in rules.lines() {
+        if heading(l).is_some_and(|h| !have.contains(&h)) {
+            lines.push(format!("review mwp/constitution.md: the current rules have `{l}`; yours has no such section"));
+        }
+    }
+
+    let mut done: Vec<String> = Vec::new();
+    for (path, text) in &changes {
+        done.push(format!("{} {}", if path.exists() { "update" } else { "create" }, p.rel(path)));
+        if !dry_run {
+            write(path, text.clone())?;
+        }
+    }
+    done.extend(lines);
+    let agents = installed(&p.root);
+    if dry_run {
+        done.push("dry run: nothing written; the skills are checked when it runs".into());
+    } else if !agents.is_empty() {
+        done.extend(update_skills(&p.root, &agents)?);
+    }
+    done.push(format!("\nmwp_version: {VERSION}. The constitution is yours: compare it with this version's rules by hand."));
+    Ok(done)
+}
+
 /// Rewrites the table in `map.md` when the modules changed. Returns what it did (`warning: ...` on failure).
 pub fn refresh_map(root: &Path) -> String {
     match Project::open(root).and_then(|p| map_texts(&p).map(|t| (p, t))) {
@@ -442,7 +524,7 @@ mod tests {
     fn two_agents_one_project() {
         let root = std::env::temp_dir().join(format!("mwp-ops-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        init(&root, Some("Demo"), &parse_agents("claude,codex").unwrap(), true).unwrap();
+        init(&root, Some("Demo"), &parse_agents("claude,codex").unwrap(), true, crate::scaffold::DEFAULT).unwrap();
         for f in ["CLAUDE.md", "AGENTS.md", ".claude/skills/mwp/SKILL.md", ".agents/skills/module/SKILL.md", ".gitignore"] {
             assert!(root.join(f).exists(), "{f}");
         }
@@ -553,6 +635,21 @@ mod tests {
         assert_eq!(open().by_id("task", &big).unwrap().get("plan_approved"), today());
         task_close(&open(), &big, false).unwrap();
 
+        // Upgrade: an old project (no headers, old version) is brought up once; a second run changes nothing.
+        let old_project = root.join("mwp/PROJECT.md");
+        fs::write(&old_project, read(&old_project).unwrap().replace(&format!("mwp_version: {}", crate::scaffold::VERSION), "mwp_version: 2")).unwrap();
+        let glossary = root.join("mwp/glossary.md");
+        let body = read(&glossary).unwrap().split_once("---\n\n").unwrap().1.replace('\n', "\r\n");
+        fs::write(&glossary, &body).unwrap();
+        assert!(lint(&open()).warnings.iter().any(|w| w.contains("run `mwp upgrade`")));
+        let dry = upgrade(&open(), true).unwrap();
+        assert!(dry.iter().any(|l| l == "update mwp/glossary.md") && fs::read_to_string(&glossary).unwrap() == body, "{dry:?}");
+        upgrade(&open(), false).unwrap();
+        let after = fs::read_to_string(&glossary).unwrap();
+        assert!(after.starts_with("---\r\nkind: glossary\r\n") && after.ends_with(&body), "CRLF is kept: {after:?}");
+        assert!(!lint(&open()).warnings.iter().any(|w| w.contains("upgrade") || w.contains("front matter")));
+        assert!(!upgrade(&open(), false).unwrap().iter().any(|l| l.starts_with("update mwp/")), "a second run changes nothing");
+
         // Replanning: closed as replanned only with `**Replanning:**` filled; then it is closed for good.
         let second = open().by_id("task", "T-0002").unwrap().path.clone();
         fs::write(&second, read(&second).unwrap().replace("- **Done:**", "- **Done:** half of it")).unwrap();
@@ -561,6 +658,7 @@ mod tests {
 ").unwrap();
         let (_, report) = task_close(&open(), "T-0002", true).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(report.warnings.iter().any(|w| w.contains("no criterion is marked")), "a replanned task names its failed criteria");
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("status"), "replanned");
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("closed"), today());
         assert!(task_start(&open(), "T-0002", "codex").unwrap_err().contains("replanned"));

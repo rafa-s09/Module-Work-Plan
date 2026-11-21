@@ -407,7 +407,7 @@ mod tests {
     fn kept_filter_drops_what_the_project_lost() {
         let root = std::env::temp_dir().join(format!("mwp-kept-filter-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        scaffold::init(&root, Some("Demo"), &[], false).unwrap();
+        scaffold::init(&root, Some("Demo"), &[], false, scaffold::DEFAULT).unwrap();
         fs::write(root.join("mwp/modules/order.md"), "---\nkind: module\nid: order\ntype: domain\nsummary: Orders\nupdated: 2026-01-01\n---\n# order\n").unwrap();
         fs::write(root.join("mwp/tasks/open/T-0001-a.md"), "---\nkind: task\nid: T-0001\nstatus: in_progress\nsize: S\nmodules: [order]\nagent: codex\n---\n# T-0001 — A\n").unwrap();
         let p = Project::open(&root).unwrap();

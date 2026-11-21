@@ -14,13 +14,16 @@ const USAGE: &str = "mwp — Module Work Plan
 Usage: mwp <command> [options]
 
 Project
-  init [dir] [--agent a,b] [--name <name>] [--no-skill] [--update-skills]
+  init [dir] [--agent a,b] [--name <name>] [--template <name>] [--no-skill] [--update-skills]
                                             Create mwp/ and the files of each agent; asks which agents
                                             (claude, codex, cursor, gemini, copilot; default claude). Never overwrites.
+                                            --template picks an installed package (default: default)
                                             --update-skills only rewrites the skills with this version's
   lint [--strict]                           Check the project; --strict also fails on warnings
   map [--write | --check]                   Print the module map; --write updates map.md, --check fails if stale
   remap [--dry-run]                         Recheck modules (paths, dependencies, tests) and update map.md
+  upgrade [--dry-run]                       Bring a project made with an older mwp up to this one: mwp_version,
+                                            headers, _template files, skills; reports constitution sections it lacks
 
 Tasks
   task new <title> [--size XS|S|M|L|XL|XXL] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]
@@ -67,9 +70,9 @@ Environment
 ";
 
 /// Flags that take a value; every other `--x` is a switch.
-const VALUED: [&str; 15] = [
+const VALUED: [&str; 16] = [
     "--name", "--status", "--module", "--modules", "--supersedes", "--size", "--reads", "--refs", "--external", "--agent",
-    "--summary", "--type", "--folder", "--owner", "--lifetime",
+    "--summary", "--type", "--folder", "--owner", "--lifetime", "--template",
 ];
 // `--folder` is shared by `module new` and `content add`.
 
@@ -111,10 +114,11 @@ fn main() -> ExitCode {
     }
     let rest = &raw[1..];
     let result = match raw[0].as_str() {
-        "init" => Args::parse(rest, &["--name", "--agent", "--no-skill", "--update-skills"]).and_then(|a| init(&a)),
+        "init" => Args::parse(rest, &["--name", "--agent", "--no-skill", "--update-skills", "--template"]).and_then(|a| init(&a)),
         "lint" => Args::parse(rest, &["--strict"]).and_then(|a| lint_cmd(&a)),
         "map" => Args::parse(rest, &["--write", "--check"]).and_then(|a| map(&a)),
         "remap" => Args::parse(rest, &["--dry-run"]).and_then(|a| remap(&a)),
+        "upgrade" => Args::parse(rest, &["--dry-run"]).and_then(|a| show(ops::upgrade(&Project::find()?, a.has("--dry-run")))),
         "task" => Args::parse(rest, &["--size", "--modules", "--reads", "--refs", "--external", "--status", "--module", "--all", "--agent", "--replanned"]).and_then(|a| task(&a)),
         "task-list" => Args::parse(rest, &["--status", "--module", "--all"]).and_then(|a| task_list(&a)),
         "locks" => locks(),
@@ -192,7 +196,7 @@ fn init(a: &Args) -> Res {
         }
         None => None,
     };
-    show(scaffold::init(dir, name.as_deref().filter(|n| !n.is_empty()), &agents, !a.has("--no-skill")))
+    show(scaffold::init(dir, name.as_deref().filter(|n| !n.is_empty()), &agents, !a.has("--no-skill"), a.get("--template").unwrap_or(scaffold::DEFAULT)))
 }
 
 fn lint_cmd(a: &Args) -> Res {

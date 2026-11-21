@@ -83,6 +83,7 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 | `mwp task start` / `close` / `block` / `review` / `release` | Claims a task and locks its modules for one agent / closes it (or `--replanned`) and runs lint / stops on it / hands it to a person / gives it back |
 | `mwp locks` | Tasks in progress, their agents and locked modules |
 | `mwp context T-0001` | Files the agent will read for a task, with a token estimate |
+| `mwp upgrade [--dry-run]` | Brings a project made with an older mwp up to this one (version, headers, `_template` files, skills) and lists constitution sections it lacks |
 | `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json`; refuses while two files share an ID |
 | `mwp ledger` | Creates or rebuilds `.mwp/ledger.json` from the project (a missing or broken one is also rebuilt by `mwp next`) |
 | `mwp adr new` / `mwp adr list` | Creates a proposed ADR (optionally superseding one) / lists ADRs |
@@ -112,7 +113,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 - **Context** in a task's header: what an agent loads for the task (constitution, task, cited modules, SPECs, ADRs and tasks) with a token estimate, and the cited IDs that do not exist in red, like `mwp context`.
 - **Board** of the tasks by status; a card opens the task. **Start**, **Status**, **Close** and **Replan** (task header, or right-click a card) do what `mwp task start`, `release`, `close` and `close --replanned` do: claims and module locks, the move to `tasks/done/`, the `## Closure` check. Replanned tasks show in Done with their own icon. On an L, XL or XXL task, **Approve plan** sets `plan_approved:`; only a person approves a plan, so the CLI has no such command, and `mwp task close` refuses those sizes without it. Dragging a card to another column does the same: In progress opens Start, Open / Blocked / Review release it, Done closes it; the column that takes the card is outlined. Filters above the columns keep the cards by title, ID or work code, module, agent and size.
 - **Accept** and **Reject** in the header of a proposed ADR set its status (only a person decides an ADR, so the CLI has no such command).
-- **File > Project agents** adds agents to the open project (their instruction file and skills, like `mwp init --agent`) and updates the skills of the agents already set up (like `mwp init --update-skills`); existing files are never overwritten.
+- **Settings > Project agents** adds agents to the open project (their instruction file and skills, like `mwp init --agent`) and updates the skills of the agents already set up (like `mwp init --update-skills`); existing files are never overwritten.
 - **Problems** from `mwp lint`; a line opens the file. A stale `map.md` gets an **Update map.md** button, like `mwp remap`.
 - **New task**, **New module**, **New SPEC** and **New ADR** (File menu, the **+** of the explorer section, the board) create the file from its template with the next free ID; a new module is added to `map.md`, a SPEC gets a module or task as its owner, an ADR can replace one in force.
 - **Delete** (file header, right-click in the explorer or on a card, File menu) removes a module, a spec or an open task after asking; a task's locks are freed and `map.md` follows the modules.
@@ -124,7 +125,9 @@ The CLI is optional: everything it does can be done by hand following the templa
 
 It rereads the project every 2 seconds, so it follows what agents change.
 
-Install it with the installer's `--gui` / `-Gui` option. The installer also puts `templates.tar.zst` next to `mwp` and `mwp-gui`: both read the templates of `mwp init` and of new tasks, modules, SPECs and ADRs from it. A plain `cargo install --path src/gui --locked` leaves that file in the build folder (`target/release/`), so copy it next to the binary yourself.
+Install it with the installer's `--gui` / `-Gui` option. The installer also puts the template packages (`default.tar.zst`, and any other `<name>.tar.zst`) next to `mwp` and `mwp-gui`: both read the templates of `mwp init` and of new tasks, modules, SPECs and ADRs from them. A plain `cargo install --path src/gui --locked` leaves those files in the build folder (`target/release/`), so copy them next to the binary yourself.
+
+**Template packages.** Each folder in `templates/` becomes `<folder>.tar.zst`, with a `manifest.json` (name, created, creator, language, details, repository) and a 512×512 `thumbs.png`. `default` is the whole project; another package carries only the files it fills in its own way (PROJECT.md, the constitution, the glossary...) and takes the rest from `default`. Pick one with `mwp init --template <name>` or in the GUI's New project dialog. A project made with an older mwp is brought up to date with `mwp upgrade` (`--dry-run` shows what it would change).
 
 Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`. What changed in each version is in its [CHANGELOG](CHANGELOG.md).
 

@@ -1,32 +1,63 @@
 //! `mwp init`: the files a new project gets, and where each agent looks for them.
-//! The templates come from `templates.tar.zst` next to the binary (packed from `templates/` by
-//! build.rs); the skills are embedded in the binary.
+//! The templates come from template packages next to the binary (`<name>.tar.zst`, packed from
+//! `templates/<name>/` by build.rs). `default` is the full project; another package only carries
+//! the files it changes (PROJECT.md, the constitution...), laid over the default. The skills are
+//! embedded in the binary.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// The templates archive, installed next to `mwp` and `mwp-gui`.
-pub const ARCHIVE: &str = "templates.tar.zst";
+/// The package every project starts from.
+pub const DEFAULT: &str = "default";
+
+/// Files that describe a package and never go into a project.
+pub const META: [&str; 2] = ["manifest.json", "thumbs.png"];
+
+/// This mwp's version: what `mwp_version:` in PROJECT.md says a project is written for.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The pointer to the constitution; the same text goes into each agent's instruction file.
 const POINTER: &str = "AGENTS.md";
 
-/// Every file in the archive, by its path inside it (`mwp/PROJECT.md`), read once.
-fn templates() -> Result<&'static BTreeMap<String, String>, String> {
-    static FILES: OnceLock<Result<BTreeMap<String, String>, String>> = OnceLock::new();
-    FILES.get_or_init(|| read_archive(&find_archive()?)).as_ref().map_err(Clone::clone)
+/// The files of a package by their path inside it (`mwp/PROJECT.md`).
+pub type Files = BTreeMap<String, Vec<u8>>;
+
+/// The default package, read once.
+fn default_files() -> Result<&'static Files, String> {
+    static FILES: OnceLock<Result<Files, String>> = OnceLock::new();
+    FILES.get_or_init(|| package(DEFAULT)).as_ref().map_err(Clone::clone)
 }
 
-/// Next to the binary or one folder up (tests run from `target/<profile>/deps/`).
-fn find_archive() -> Result<std::path::PathBuf, String> {
+/// The folder with the packages: next to the binary or one folder up (tests run from
+/// `target/<profile>/deps/`).
+pub fn packages_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    exe.ancestors().skip(1).take(2).map(|d| d.join(ARCHIVE)).find(|p| p.is_file())
-        .ok_or_else(|| format!("{ARCHIVE} not found next to {}: reinstall mwp", exe.display()))
+    exe.ancestors().skip(1).take(2).find(|d| d.join(format!("{DEFAULT}.tar.zst")).is_file()).map(Path::to_path_buf)
+        .ok_or_else(|| format!("{DEFAULT}.tar.zst not found next to {}: reinstall mwp", exe.display()))
 }
 
-pub fn read_archive(path: &Path) -> Result<BTreeMap<String, String>, String> {
+/// The installed packages by name, `default` first.
+pub fn packages() -> Vec<String> {
+    let Ok(dir) = packages_dir() else { return Vec::new() };
+    let mut names: Vec<String> = fs::read_dir(dir).into_iter().flatten().flatten()
+        .filter_map(|e| e.file_name().to_str()?.strip_suffix(".tar.zst").map(String::from))
+        .collect();
+    names.sort_by_key(|n| (n != DEFAULT, n.clone()));
+    names
+}
+
+/// Every file of the package `name`, read from its archive.
+pub fn package(name: &str) -> Result<Files, String> {
+    let path = packages_dir()?.join(format!("{name}.tar.zst"));
+    if name.is_empty() || name.contains(['/', '\\']) || !path.is_file() {
+        return Err(format!("no template `{name}`; installed: {}", packages().join(", ")));
+    }
+    read_archive(&path)
+}
+
+pub fn read_archive(path: &Path) -> Result<Files, String> {
     let err = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
     let file = fs::File::open(path).map_err(|e| err(&e))?;
     let zst = ruzstd::decoding::StreamingDecoder::new(file).map_err(|e| err(&e))?;
@@ -37,9 +68,9 @@ pub fn read_archive(path: &Path) -> Result<BTreeMap<String, String>, String> {
             continue;
         }
         let name = entry.path().map_err(|e| err(&e))?.to_string_lossy().replace('\\', "/");
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut entry, &mut text).map_err(|e| err(&format!("{name}: {e}")))?;
-        files.insert(name.trim_start_matches("./").to_string(), text);
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|e| err(&format!("{name}: {e}")))?;
+        files.insert(name.trim_start_matches("./").to_string(), bytes);
     }
     Ok(files)
 }
@@ -114,18 +145,34 @@ pub fn update_skills(dir: &Path, agents: &[&Agent]) -> Result<Vec<String>, Strin
     Ok(lines)
 }
 
+/// A file of the default package (task, module, SPEC and ADR templates are the same in every package).
 pub fn template(path: &str) -> Result<&'static str, String> {
-    templates()?.get(path).map(String::as_str).ok_or_else(|| format!("{ARCHIVE} has no {path}: reinstall mwp"))
+    let bytes = default_files()?.get(path).ok_or_else(|| format!("{DEFAULT}.tar.zst has no {path}: reinstall mwp"))?;
+    std::str::from_utf8(bytes).map_err(|_| format!("{DEFAULT}.tar.zst: {path} is not text"))
 }
 
-/// Creates the MWP structure in `dir` for the chosen agents. Never overwrites a file.
-pub fn init(dir: &Path, name: Option<&str>, agents: &[&Agent], skills: bool) -> Result<Vec<String>, String> {
-    let mut files: Vec<(String, &str)> = templates()?.iter().map(|(p, c)| (p.clone(), c.as_str())).collect();
-    let pointer = template(POINTER)?;
+/// The project files of a package: the default's, with the package's own laid over them.
+pub fn project_files(package_name: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut files = default_files()?.clone();
+    if package_name != DEFAULT {
+        files.extend(package(package_name)?);
+    }
+    files.into_iter()
+        .filter(|(p, _)| !META.contains(&p.as_str()))
+        .map(|(p, b)| String::from_utf8(b).map(|t| (p.clone(), t)).map_err(|_| format!("template {package_name}: {p} is not text")))
+        .collect()
+}
+
+/// Creates the MWP structure in `dir` from a template package, for the chosen agents. Never
+/// overwrites a file.
+pub fn init(dir: &Path, name: Option<&str>, agents: &[&Agent], skills: bool, package_name: &str) -> Result<Vec<String>, String> {
+    let all = project_files(package_name)?;
+    let pointer = all.get(POINTER).cloned().ok_or(format!("template {package_name} has no {POINTER}"))?;
+    let mut files: Vec<(String, String)> = all.into_iter().collect();
     for a in agents {
-        files.push((a.pointer.to_string(), pointer));
+        files.push((a.pointer.to_string(), pointer.clone()));
         if skills {
-            files.extend(SKILLS.iter().map(|(p, c)| (format!("{}/{p}", a.skills), *c)));
+            files.extend(SKILLS.iter().map(|(p, c)| (format!("{}/{p}", a.skills), c.to_string())));
         }
     }
     let mut lines = Vec::new();
@@ -146,6 +193,9 @@ pub fn init(dir: &Path, name: Option<&str>, agents: &[&Agent], skills: bool) -> 
         };
         if matches!(path.as_str(), "mwp/PROJECT.md" | "mwp/constitution.md") {
             content = content.replace("<YYYY-MM-DD>", &crate::doc::today());
+        }
+        if path == "mwp/PROJECT.md" {
+            content = crate::doc::set_field(&content, "mwp_version", VERSION);
         }
         fs::create_dir_all(target.parent().unwrap()).map_err(|e| format!("{path}: {e}"))?;
         fs::write(&target, content).map_err(|e| format!("{path}: {e}"))?;
@@ -182,22 +232,63 @@ mod tests {
     }
 
     #[test]
-    fn the_archive_holds_every_file_of_templates() {
-        fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) {
+    fn each_package_holds_every_file_of_its_folder() {
+        fn walk(dir: &Path, root: &Path, out: &mut Files) {
             for e in fs::read_dir(dir).unwrap().flatten() {
                 let p = e.path();
                 if p.is_dir() {
                     walk(&p, root, out);
                 } else {
                     let name = p.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
-                    out.insert(name, fs::read_to_string(&p).unwrap());
+                    out.insert(name, fs::read(&p).unwrap());
                 }
             }
         }
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates");
-        let mut expected = BTreeMap::new();
-        walk(&root, &root, &mut expected);
-        assert_eq!(templates().unwrap(), &expected);
+        let templates = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../templates");
+        for dir in fs::read_dir(&templates).unwrap().flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+            let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+            let mut expected = Files::new();
+            walk(&dir, &dir, &mut expected);
+            assert_eq!(package(&name).unwrap(), expected, "{name}");
+            assert!(packages().contains(&name));
+        }
+        assert_eq!(packages()[0], DEFAULT);
+        assert!(package("gone").unwrap_err().contains("default"), "an unknown package lists the installed ones");
         assert!(read_archive(Path::new("gone.tar.zst")).unwrap_err().contains("gone.tar.zst"));
+        // A project never gets the package's description, and PROJECT.md says which mwp wrote it.
+        let files = project_files(DEFAULT).unwrap();
+        assert!(!files.contains_key("manifest.json") && !files.contains_key("thumbs.png") && files.contains_key("mwp/constitution.md"));
+    }
+
+    #[test]
+    fn a_package_is_laid_over_the_default() {
+        let mut tar = tar::Builder::new(Vec::new());
+        for (path, text) in [("manifest.json", "{}"), ("mwp/PROJECT.md", "---
+kind: project
+mwp_version: 1
+name: <Project name>
+---
+# Engine game
+")] {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(text.len() as u64);
+            h.set_cksum();
+            tar.append_data(&mut h, path, text.as_bytes()).unwrap();
+        }
+        let packed = ruzstd::encoding::compress_to_vec(&tar.into_inner().unwrap()[..], ruzstd::encoding::CompressionLevel::Fastest);
+        let file = packages_dir().unwrap().join("zz-overlay-test.tar.zst");
+        fs::write(&file, packed).unwrap();
+        let files = project_files("zz-overlay-test");
+        let _ = fs::remove_file(&file);
+        let files = files.unwrap();
+        assert!(files["mwp/PROJECT.md"].contains("# Engine game"), "the package's file wins");
+        assert_eq!(files["mwp/constitution.md"], template("mwp/constitution.md").unwrap(), "the rest comes from the default");
+        assert!(!files.contains_key("manifest.json"));
+        let dir = std::env::temp_dir().join(format!("mwp-overlay-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert!(init(&dir, Some("X"), &[&AGENTS[0]], false, "nope").unwrap_err().contains("no template `nope`"));
+        init(&dir, Some("X"), &[&AGENTS[0]], false, DEFAULT).unwrap();
+        assert!(fs::read_to_string(dir.join("mwp/PROJECT.md")).unwrap().contains(&format!("mwp_version: {VERSION}")));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -476,8 +476,8 @@
 
       <div class="note">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        <p class="pt">Sem os scripts, é o mesmo que <code>cargo install --path src/client --locked</code> (e <code>src/gui</code> para a GUI). As skills ficam dentro do binário, e os templates ficam em <code>templates.tar.zst</code>, que o instalador coloca ao lado do <code>mwp</code>; com o <code>cargo install</code> sozinho, copie esse arquivo de <code>target/release/</code>. Rode o instalador de novo depois de mudar <code>templates/</code> ou <code>src/skill/</code>.</p>
-        <p class="en">Without the scripts it is <code>cargo install --path src/client --locked</code> (and <code>src/gui</code> for the GUI). Skills are built into the binary; templates live in <code>templates.tar.zst</code>, which the installer puts next to <code>mwp</code> (with plain <code>cargo install</code>, copy it from <code>target/release/</code>). Run the installer again after changing <code>templates/</code> or <code>src/skill/</code>.</p>
+        <p class="pt">Sem os scripts, é o mesmo que <code>cargo install --path src/client --locked</code> (e <code>src/gui</code> para a GUI). As skills ficam dentro do binário, e os templates ficam nos pacotes <code>default.tar.zst</code> (e outros <code>&lt;nome&gt;.tar.zst</code>), que o instalador coloca ao lado do <code>mwp</code>; com o <code>cargo install</code> sozinho, copie esses arquivos de <code>target/release/</code>. Rode o instalador de novo depois de mudar <code>templates/</code> ou <code>src/skill/</code>.</p>
+        <p class="en">Without the scripts it is <code>cargo install --path src/client --locked</code> (and <code>src/gui</code> for the GUI). Skills are built into the binary; templates live in the packages <code>default.tar.zst</code> (and other <code>&lt;name&gt;.tar.zst</code>), which the installer puts next to <code>mwp</code> (with plain <code>cargo install</code>, copy them from <code>target/release/</code>). Run the installer again after changing <code>templates/</code> or <code>src/skill/</code>.</p>
       </div>
     </section>
 
@@ -553,7 +553,7 @@
           <tr><td class="pt">Conferir o projeto</td><td class="en">Check the project</td><td><code>mwp lint</code></td><td class="pt">Painel <b>Problems</b></td><td class="en"><b>Problems</b> panel</td></tr>
           <tr><td class="pt">Atualizar o mapa</td><td class="en">Refresh the map</td><td><code>mwp remap</code></td><td class="pt">Botão <b>Update map.md</b></td><td class="en"><b>Update map.md</b> button</td></tr>
           <tr><td class="pt">Aceitar um ADR</td><td class="en">Accept an ADR</td><td class="pt">— (só uma pessoa decide)</td><td class="en">— (only a person decides)</td><td class="pt"><b>Accept</b> / <b>Reject</b> no cabeçalho</td><td class="en"><b>Accept</b> / <b>Reject</b> in the header</td></tr>
-          <tr><td class="pt">Adicionar agentes ao projeto</td><td class="en">Add agents to a project</td><td><code>mwp init --agent codex</code></td><td><b>File</b> &gt; Project agents…</td></tr>
+          <tr><td class="pt">Adicionar agentes ao projeto</td><td class="en">Add agents to a project</td><td><code>mwp init --agent codex</code></td><td><b>Settings</b> &gt; Project agents…</td></tr>
         </tbody>
       </table></div>
     </section>
