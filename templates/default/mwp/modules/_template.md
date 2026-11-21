@@ -30,7 +30,7 @@ updated: <YYYY-MM-DD>
 | <TEST-XXXX> | <FR-01> | <One-line scenario> | <tests/...> |
 
 ## Related decisions
-- [<ADR-XXXX — title>](../decisions/ADR-XXXX-slug.md)
+- [<ADR-XXXX — title>](../decisions/ADR-XXXX-<title>.md)
 
 ## Known pitfalls
 - <What has broken before or is not obvious.>

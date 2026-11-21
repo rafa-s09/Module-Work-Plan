@@ -12,10 +12,11 @@ A module describes how a part of the system works **today**. This skill builds m
 ## Ground rules
 
 - **Never change code or tests.** This skill only writes files in `mwp/modules/` (and `map.md` through `mwp remap`).
+- **Source code only.** Never decompile, disassemble or reverse-engineer anything: executables, libraries (`.dll`, `.so`, `.jar`), bytecode, minified bundles or packaged assets. A part of the system that exists only in compiled form is documented from its public documentation or headers, if any, or reported as not documented; ask before going further.
 - **Never edit an accepted ADR.** If code contradicts one, report it.
 - **Describe, don't judge.** A rule states what the code does. If the code looks wrong, do not write the bug as a rule: report it as a suspected bug.
 - **Never resolve a conflict silently.** When the module and the code disagree on behavior, report it and ask which one is right. Only factual drift (paths, dependencies, signatures, test registration) is fixed directly.
-- **Run it as a task.** If no task covers the work, create one (`mwp task new "Document modules" --size L`) so changelog rows have a task ID. Size L: the proposal below is the plan, and you stop for approval.
+- **Run it as a task.** If no task covers the work, create one so changelog rows have a task ID: `--size L` for a few modules, `--size XL` for a whole project (`mwp task new "Document modules" --size XL`). The proposal below is the plan (for XL, in a transient SPEC): stop until a person approves it, which sets `plan_approved:` in the task (never write it yourself).
 
 ## Create: modules for existing code
 
@@ -30,7 +31,7 @@ A module describes how a part of the system works **today**. This skill builds m
    - `lib`: code shared by several modules (utilities, common types, internal SDKs), with no business rules.
    - A module over ~500 lines must be split, or its detail moved to a durable SPEC.
 4. **Stop and show the proposal** as a table (ID, type, summary, `code:`, `tests:`, `depends_on:`) with the reason for each boundary. Write nothing until a person approves it.
-5. **Write each module** from `mwp/modules/_template.md`:
+5. **Write each module.** Create it with `mwp module new <id> --summary "<one line>" --type <type> [--folder a/b]` (it keeps IDs unique across folders and updates `map.md`), then fill it in:
    - Front matter: `code:` and `tests:` point to real folders; `depends_on:` comes from real imports; `updated:` is today.
    - **Functional / non-functional rules:** one observable behavior each (inputs, outputs, limits, errors), with `FR-01`, `NFR-01` numbering per module. Cite the test that covers it, or write `Tests: none`.
    - **States and transitions, contracts:** from the code (exported functions, endpoints, events).
@@ -73,6 +74,8 @@ Audit every module, or only the ones asked for. For each module:
    | Module too large | Propose a split or a durable SPEC |
 
 5. If the module changed: set `updated:` to today and add a changelog row with the task ID. Then `mwp remap` and `mwp lint`.
+
+If any finding needs a decision, write the report and run `mwp task review T-XXXX`: the task waits for a person with its modules free.
 
 ## Report
 
