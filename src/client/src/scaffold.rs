@@ -140,10 +140,13 @@ pub fn init(dir: &Path, name: Option<&str>, agents: &[&Agent], skills: bool) -> 
             lines.push(format!("skip   {path} (exists)"));
             continue;
         }
-        let content = match name {
+        let mut content = match name {
             Some(n) if path == "mwp/PROJECT.md" => content.replace("<Project name>", n),
             _ => content.to_string(),
         };
+        if matches!(path.as_str(), "mwp/PROJECT.md" | "mwp/constitution.md") {
+            content = content.replace("<YYYY-MM-DD>", &crate::doc::today());
+        }
         fs::create_dir_all(target.parent().unwrap()).map_err(|e| format!("{path}: {e}"))?;
         fs::write(&target, content).map_err(|e| format!("{path}: {e}"))?;
         lines.push(format!("create {path}"));

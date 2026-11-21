@@ -28,6 +28,8 @@ Tasks
   task start <T-XXXX> [--agent <name>]      Claim the task and lock its modules; fails if another agent holds them
   task close <T-XXXX> [--replanned]         Set done, move to tasks/done/, free the locks, run lint;
                                             --replanned closes it as replanned (fill **Replanning:** first)
+  task block <T-XXXX>                       Stop on the task: status blocked, locks freed
+  task review <T-XXXX>                      Hand the task to a person: status review, locks freed
   task release <T-XXXX> [--status open|blocked|review]
                                             Give the task back without closing it (default: open)
   task-list [--status <s>] [--module <id>] [--all]
@@ -260,7 +262,9 @@ fn task(a: &Args) -> Res {
             Ok(report.errors.is_empty())
         }
         Some("release") => show(ops::task_release(&Project::find()?, id()?, a.get("--status").unwrap_or("open"))),
-        _ => Err("usage: mwp task <new|list|start|close|release> ...".into()),
+        Some("block") => show(ops::task_release(&Project::find()?, id()?, "blocked")),
+        Some("review") => show(ops::task_release(&Project::find()?, id()?, "review")),
+        _ => Err("usage: mwp task <new|list|start|close|block|review|release> ...".into()),
     }
 }
 

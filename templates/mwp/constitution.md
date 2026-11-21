@@ -82,7 +82,7 @@ If a `[manual]` criterion could not be verified: `status: review`, list what is 
 - An existing TEST fails and seems to contradict the task: **stop** and ask.
 - Content the task needs cannot be found (a file, a resource in `mwp/content/`, a document it cites): **stop** and say what is missing. Never invent or download a replacement.
 - A link or reference is broken (a path, a URL, an ID that `mwp context` reports as `MISSING`): **stop** and ask. A module's `code:` or `tests:` path that the task is about to create is not broken.
-- An unexpected error that cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing): **stop**, report the error and what was tried, and release the task with `mwp task release T-XXXX --status blocked`.
+- An unexpected error that cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing): **stop**, report the error and what was tried, and release the task with `mwp task block T-XXXX`.
 - Never resolve a conflict silently.
 
 ## 9. When in doubt

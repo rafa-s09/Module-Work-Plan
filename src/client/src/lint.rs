@@ -27,8 +27,11 @@ impl Report {
     }
 }
 
-const KINDS: [(&str, &str, &[&str]); 5] = [
+const KINDS: [(&str, &str, &[&str]); 8] = [
     ("project", "", &["mwp_version", "name"]),
+    ("constitution", "", &["updated"]),
+    ("map", "", &[]),
+    ("glossary", "", &[]),
     ("module", "", &["id", "type", "summary", "updated"]),
     ("task", "T", &["id", "status", "size", "modules"]),
     ("spec", "SP", &["id", "lifetime", "status", "owner"]),
@@ -129,6 +132,7 @@ pub fn lint(p: &Project) -> Report {
     } else {
         r.errors.push("mwp/constitution.md: missing".into());
     }
+    project_docs(p, &mut r);
     match map_texts(p) {
         Ok((cur, new)) if cur != new => r.errors.push("mwp/map.md: out of date (run `mwp remap` or `mwp map --write`)".into()),
         Err(e) => r.errors.push(e),
@@ -136,6 +140,40 @@ pub fn lint(p: &Project) -> Report {
     }
     check_modules(p, &mut r);
     r
+}
+
+/// The files at the top of `mwp/`: each one's `kind:` matches its name, and the dates read as dates.
+/// A file without front matter predates it: a warning, so older projects keep passing.
+fn project_docs(p: &Project, r: &mut Report) {
+    for (file, kind) in [("PROJECT.md", "project"), ("constitution.md", "constitution"), ("map.md", "map"), ("glossary.md", "glossary")] {
+        let path = p.mwp.join(file);
+        match p.docs.iter().find(|d| d.path == path) {
+            Some(d) if d.kind() != kind => r.err(p, d, format!("`kind: {}` but this file is the {kind}; use `kind: {kind}`", d.kind())),
+            Some(d) => {
+                for field in ["created", "updated"].into_iter().filter(|f| d.fm.contains_key(*f)) {
+                    if !is_date(d.get(field)) {
+                        r.err(p, d, format!("`{field}: {}` is not a date (YYYY-MM-DD)", d.get(field)));
+                    }
+                }
+                if kind == "project" && !d.fm.contains_key("created") {
+                    r.warn(p, d, "no `created:` date".into());
+                }
+            }
+            None if path.exists() => r.warnings.push(format!("mwp/{file}: no front matter; start it with `---`, `kind: {kind}`, `---`")),
+            None => {}
+        }
+    }
+    for d in p.docs.iter().filter(|d| matches!(d.kind(), "constitution" | "map" | "glossary")) {
+        if d.path.parent() != Some(p.mwp.as_path()) {
+            r.err(p, d, format!("`kind: {}` belongs only to mwp/{}.md", d.kind(), d.kind()));
+        }
+    }
+}
+
+/// `YYYY-MM-DD`, by shape.
+pub fn is_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10 && b.iter().enumerate().all(|(i, c)| if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() })
 }
 
 fn refs(p: &Project, d: &Doc, r: &mut Report, field: &str, kind: &str) {
@@ -245,5 +283,6 @@ mod tests {
         assert!(!has_content("> hint\n- **Done:**\n- **SPECs:**\n"));
         assert!(has_content("- **Done:** added discount\n"));
         assert!(has_content("Free text.\n"));
+        assert!(is_date("2026-11-20") && !is_date("<YYYY-MM-DD>") && !is_date("2026-1-20"));
     }
 }

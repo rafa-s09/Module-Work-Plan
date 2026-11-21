@@ -193,7 +193,8 @@ pub fn contains_id(text: &str, id: &str) -> bool {
 /// Highest number used in MWP docs, module test folders or the ledger, plus one.
 /// Constitution, skill and templates are not scanned: their example IDs are not real.
 pub fn next_id(p: &Project, prefix: &str) -> u64 {
-    let mut files: Vec<PathBuf> = p.docs.iter().map(|d| d.path.clone()).collect();
+    // The constitution, map and glossary cite IDs as examples (`T-0043`), not as used ones.
+    let mut files: Vec<PathBuf> = p.docs.iter().filter(|d| !matches!(d.kind(), "constitution" | "map" | "glossary")).map(|d| d.path.clone()).collect();
     for m in p.of_kind("module") {
         files.extend(test_files(p, m));
     }
@@ -226,6 +227,10 @@ pub fn render_map(p: &Project) -> String {
 pub fn map_texts(p: &Project) -> Result<(String, String), String> {
     let path = p.mwp.join("map.md");
     let cur = read(&path).ok_or("mwp/map.md not found")?;
+    // A second pair would leave a stale table behind the first, never updated.
+    if cur.matches(MAP_BEGIN).count() > 1 || cur.matches(MAP_END).count() > 1 {
+        return Err(format!("mwp/map.md: markers {MAP_BEGIN} / {MAP_END} appear more than once; keep one pair"));
+    }
     let (b, e) = match (cur.find(MAP_BEGIN), cur.find(MAP_END)) {
         (Some(b), Some(e)) if b < e => (b, e),
         _ => return Err(format!("mwp/map.md: markers {MAP_BEGIN} / {MAP_END} not found")),

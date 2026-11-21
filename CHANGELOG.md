@@ -1,24 +1,35 @@
-# Changelog: mwp-gui
+# Changelog
 
-What changed in each version of the desktop editor.
+What changed in each version of the CLI and core (`mwp`) and of the desktop editor (`mwp-gui`).
 
-## Unreleased
+## mwp 0.3.1 · mwp-gui 0.1.4 (2026-11-20)
 
-- **Task sizes:** XS, S, M, L, XL and XXL in New task and the board filter. XS (a trivial change, like bumping a version) uses the short template like S; L and up need an approved plan; XL puts the plan in a SPEC (also for tasks with many manual checks); an XXL task (too big, or far outside the project's field) has a plan that splits it into smaller tasks.
-- **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu), like `mwp task close --replanned`. It needs `**Replanning:**` in `## Closure`, moves to `tasks/done/` and shows in Done with its own icon.
-- **Approve plan:** L, XL and XXL tasks get `plan_approved:`. The task header has **Approve plan**, which sets it to today once `## Plan` is written; only a person approves a plan, so the CLI has no such command. `mwp task close` refuses those sizes without it, and lint flags a task in review without it (a warning while in progress).
-- **Lint:** a module's `code:` or `tests:` path that does not exist yet is a warning, not an error; so is a registered TEST when none of the `tests` paths exists yet.
+### CLI and core
+- **Task sizes:** XS, S, M, L, XL and XXL (`mwp task new --size`). XS (a trivial change, like bumping a version) uses the short template like S; L and up need an approved plan; XL puts the plan in a SPEC (also for tasks with many manual checks); an XXL task (too big, or far outside the project's field) has a plan that splits it into smaller tasks.
+- **Replanning:** `mwp task close T-XXXX --replanned` closes a task whose plan cannot reach the goal: `status: replanned`, moved to `tasks/done/`. It needs `**Replanning:**` in `## Closure`; lint accepts a replanned task in `tasks/done/` and in `refs:`.
+- **Plan approval:** L, XL and XXL tasks carry `plan_approved:`, which only a person sets (in the GUI). `mwp task close` refuses those sizes without it; lint reports a task in review without it, and warns while it is in progress.
+- **`mwp task block` and `mwp task review`:** shortcuts for `mwp task release --status blocked` and `--status review`.
+- **Task dates:** `mwp` and the GUI write `updated:` on each change of status (start, block, review, release, close, plan approval) and `closed:` when a task is closed. An edit by hand does not move them.
+- **Lint:**
+  - a module's `code:` or `tests:` path that does not exist yet is a warning, not an error; so is a registered TEST when none of the `tests` paths exists yet;
+  - `map.md` with its `mwp:map` markers more than once is an error (the second table was never updated);
+  - `PROJECT.md`, `constitution.md`, `map.md` and `glossary.md` carry `kind:` in front matter: a wrong kind or a date that is not `YYYY-MM-DD` is an error, a missing header (older projects) or a project without `created:` is a warning. `mwp init` fills `created:` and the constitution's `updated:` with today.
+- **Constitution and skill:** the rule of 3 (stop after 3 failed fix attempts on a test or criterion), replanning, the size table and the stop rules as brakes, not punishments.
+- **Fix:** the next free ID no longer counts the example IDs (`T-0043`) in the constitution, now that it has front matter.
 
-## 0.1.3 (2026-11-16)
+### GUI
+- **Task sizes** in New task and the board filter.
+- **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu). It shows in Done with its own icon and can no longer be dragged.
+- **Approve plan:** the header of an L, XL or XXL task without approval has **Approve plan**, which sets `plan_approved:` to today once `## Plan` is written.
 
-With the core (`mwp`) 0.3.0.
+## mwp 0.3.0 · mwp-gui 0.1.3 (2026-11-16)
 
 - **Templates:** new tasks, modules, SPECs, ADRs and projects take their templates from `templates.tar.zst` next to `mwp-gui`, which the installer puts there.
 - **Windows:** release builds no longer open a console window behind the GUI.
 - **Spanish, Japanese, Korean and Chinese:** the GUI comes in these languages too (`es.json`, `ja.json`, `ko.json`, `zh-CN.json` for Simplified Chinese, `zh-TW.json` for Traditional Chinese). Their text uses the system's fonts (Yu Gothic, Malgun Gothic, Microsoft YaHei and Microsoft JhengHei on Windows; Hiragino, Apple SD Gothic Neo and PingFang on macOS; Noto Sans CJK on Linux), with the chosen language's font first; without them those characters show as boxes.
 - **Fonts:** choosing a text font or a language no longer drops the icons when egui applies the change inside a frame.
 
-## 0.1.2 (2026-11-14)
+## mwp-gui 0.1.2 (2026-11-14)
 
 - **Appearance:** theme (dark, light or the system's), text size and text font in Settings > Preferences. The file header no longer runs under its buttons with larger text.
 - **Settings > Preferences** and **languages:** the GUI in English or Brazilian Portuguese, from JSON files in `<config>/mwp-gui/lang/` that anyone can copy and translate for another language.
@@ -29,7 +40,7 @@ With the core (`mwp`) 0.3.0.
 - **Replace in project:** Replace all in the Search tab, after asking; files open in a tab change there and stay unsaved, the others are written.
 - **Board filters** are remembered per project, with the open tabs. A module, agent or size the project no longer has is dropped.
 
-## 0.1.1 (2026-11-13)
+## mwp-gui 0.1.1 (2026-11-13)
 
 - **Installers:** `install.ps1 -Gui` / `install.sh --gui` also install `mwp-gui`.
 - **Editor:** Replace (Ctrl+H) and Replace all in the find bar; Find in project (Ctrl+Shift+F) in a Search tab of the bottom panel; IDs in the preview link to their files, and Ctrl+click opens them in the source.
@@ -41,6 +52,6 @@ With the core (`mwp`) 0.3.0.
 - **Window:** remembers its size and place, the panels, the collapsed sections, the editor mode and each project's open tabs.
 - **Module types** `api` and `lib`, next to `domain`, `ui` and `infra`.
 
-## 0.1.0 (2026-11-13)
+## mwp-gui 0.1.0 (2026-11-13)
 
 The first version: an explorer of the `mwp/` files with folders and icons, a Markdown editor with tabs, highlighted source, preview and find, the task board with the task lifecycle (Start, Status, Close), New / Delete for modules, tasks, SPECs, ADRs and content, Update map.md, a warning when an agent changes a file you are editing, and New / Open project with the recent projects.

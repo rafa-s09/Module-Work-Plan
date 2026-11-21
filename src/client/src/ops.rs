@@ -56,6 +56,12 @@ pub fn find_task<'a>(p: &'a Project, key: &str) -> Result<&'a Doc, String> {
         .ok_or(format!("no task with id or external code `{key}`"))
 }
 
+/// Sets a task's `updated:` to today: the date of its last change of status (or plan approval)
+/// made through `mwp` or the GUI. An edit by hand does not move it.
+fn stamp(text: &str) -> String {
+    set_field(text, "updated", &today())
+}
+
 /// Creates an open task. `fields` are `(modules | reads | refs | external, "a,b")`.
 pub fn task_new(p: &Project, title: &str, size: &str, fields: &[(&str, Option<&str>)]) -> Lines {
     let title = title.trim();
@@ -105,7 +111,7 @@ pub fn task_start(p: &Project, key: &str, agent: &str) -> Lines {
     let modules = t.list("modules");
     state::claim(&p.state, id, agent, &modules)?;
     let text = read(&t.path).ok_or("cannot read the task")?;
-    if let Err(e) = write(&t.path, set_field(&set_field(&text, "status", "in_progress"), "agent", agent)) {
+    if let Err(e) = write(&t.path, stamp(&set_field(&set_field(&text, "status", "in_progress"), "agent", agent))) {
         state::release(&p.state, id);
         return Err(e);
     }
@@ -132,7 +138,7 @@ pub fn task_close(p: &Project, key: &str, replanned: bool) -> Result<(Vec<String
     }
     let text = read(&t.path).ok_or("cannot read the task")?;
     let dest = p.mwp.join("tasks").join("done").join(t.path.file_name().unwrap());
-    write(&dest, set_field(&text, "status", if replanned { "replanned" } else { "done" }))?;
+    write(&dest, set_field(&stamp(&set_field(&text, "status", if replanned { "replanned" } else { "done" })), "closed", &today()))?;
     if dest != t.path {
         fs::remove_file(&t.path).map_err(|e| e.to_string())?;
     }
@@ -151,7 +157,7 @@ pub fn task_release(p: &Project, key: &str, status: &str) -> Lines {
         return Err(format!("{id} is {}", t.get("status")));
     }
     let text = read(&t.path).ok_or("cannot read the task")?;
-    write(&t.path, set_field(&text, "status", status))?;
+    write(&t.path, stamp(&set_field(&text, "status", status)))?;
     state::release(&p.state, id);
     Ok(vec![format!("release {id} (status: {status}, locks freed)")])
 }
@@ -408,7 +414,7 @@ pub fn plan_approve(p: &Project, key: &str) -> Lines {
         return Err(format!("{id}: `## Plan` is empty; the agent writes it first"));
     }
     let text = read(&t.path).ok_or("cannot read the task")?;
-    write(&t.path, set_field(&text, "plan_approved", &today()))?;
+    write(&t.path, stamp(&set_field(&text, "plan_approved", &today())))?;
     Ok(vec![format!("update {} (plan_approved: {})", p.rel(&t.path), today())])
 }
 
@@ -455,6 +461,25 @@ mod tests {
         assert!(lint(&open()).errors.iter().any(|e| e.contains("TEST-0001")), "a test missing from an existing folder is an error");
         fs::write(root.join("tests/order/total.rs"), "// TEST-0001: total
 ").unwrap();
+        // The top files carry their kind; a missing header is a warning, a wrong one an error.
+        assert!(!r.warnings.iter().any(|w| w.contains("front matter") || w.contains("created")), "{:?}", r.warnings);
+        let map = root.join("mwp/map.md");
+        let map_text = read(&map).unwrap();
+        fs::write(&map, format!("{map_text}
+{}
+{}
+", crate::doc::MAP_BEGIN, crate::doc::MAP_END)).unwrap();
+        assert!(lint(&open()).errors.iter().any(|e| e.contains("more than once")));
+        fs::write(&map, &map_text).unwrap();
+        let glossary = root.join("mwp/glossary.md");
+        let glossary_text = read(&glossary).unwrap();
+        fs::write(&glossary, glossary_text.replace("kind: glossary", "kind: map")).unwrap();
+        assert!(lint(&open()).errors.iter().any(|e| e.contains("use `kind: glossary`")));
+        fs::write(&glossary, glossary_text.split_once("---
+
+").map_or(glossary_text.clone(), |(_, body)| body.to_string())).unwrap();
+        assert!(lint(&open()).warnings.iter().any(|w| w.contains("glossary.md: no front matter")));
+        fs::write(&glossary, &glossary_text).unwrap();
         // Six sizes; XS uses the short template like S.
         assert!(task_new(&open(), "Huge", "XXXL", &[]).unwrap_err().contains("XXL"));
         // Context: constitution, task, cited module; a cited ID that does not exist is missing.
@@ -508,6 +533,7 @@ mod tests {
         task_start(&open(), "T-0002", "codex").unwrap();
         task_release(&open(), "T-0002", "blocked").unwrap();
         assert!(state::locks(&open().state).is_empty());
+        assert_eq!(open().by_id("task", "T-0002").unwrap().get("updated"), today());
 
         // An L task closes only with its plan approved, and only a written plan can be approved.
         task_new(&open(), "Big one", "L", &[("modules", Some("order"))]).unwrap();
@@ -536,6 +562,7 @@ mod tests {
         let (_, report) = task_close(&open(), "T-0002", true).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert_eq!(open().by_id("task", "T-0002").unwrap().get("status"), "replanned");
+        assert_eq!(open().by_id("task", "T-0002").unwrap().get("closed"), today());
         assert!(task_start(&open(), "T-0002", "codex").unwrap_err().contains("replanned"));
         task_new(&open(), "Smaller", "XS", &[("refs", Some("T-0002"))]).unwrap();
         let small = open();

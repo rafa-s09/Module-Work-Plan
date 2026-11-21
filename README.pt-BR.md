@@ -80,7 +80,7 @@ Veja o **[guia](assets/docs/guide.pt-BR.md)** para o fluxo completo, as skills e
 |---|---|
 | `mwp init [--agent a,b]` | Cria a estrutura `mwp/` e os arquivos de cada agente; nunca sobrescreve |
 | `mwp task new` / `mwp task-list` | Cria uma task com o próximo ID / lista as tasks |
-| `mwp task start` / `close` / `release` | Reserva uma task e bloqueia seus módulos para um agente / fecha e roda o lint / devolve |
+| `mwp task start` / `close` / `block` / `review` / `release` | Reserva uma task e bloqueia seus módulos para um agente / fecha (ou `--replanned`) e roda o lint / para nela / entrega a uma pessoa / devolve |
 | `mwp locks` | Tasks em andamento, seus agentes e módulos bloqueados |
 | `mwp context T-0001` | Arquivos que o agente vai ler em uma task, com estimativa de tokens |
 | `mwp next <T\|SP\|ADR\|TEST>` | Próximo ID livre, com reserva opcional em `.mwp/ledger.json` |
@@ -97,7 +97,7 @@ O CLI é opcional: tudo o que ele faz pode ser feito à mão seguindo os templat
 
 ## Editor (GUI)
 
-O `mwp-gui` (versão 0.1.3) é um editor de desktop opcional para a pessoa que acompanha o trabalho:
+O `mwp-gui` (versão 0.1.4) é um editor de desktop opcional para a pessoa que acompanha o trabalho:
 
 - **Explorador** dos arquivos de `mwp/` por seção (projeto, módulos com suas subpastas, SPECs, ADRs e, por último, as tasks divididas em abertas e concluídas; o botão direito em Modules ou numa pasta cria ali um módulo ou uma pasta), com arquivos quebrados em vermelho, e os agentes trabalhando com os módulos que bloqueiam. **Renomeie** um arquivo ou pasta (botão direito, ou F2 para o arquivo aberto; um módulo mantém o ID) e arraste arquivos e pastas para outra pasta de Modules ou de Content para movê-los; ADRs e tasks concluídas ficam como estão.
 - **Editor de Markdown** com abas: código com destaque e números de linha, barra de formatação (títulos, negrito, itálico, código, listas, checklists, citações, links) e preview ao vivo, lado a lado ou sozinho. O front matter aparece como tabela de propriedades no preview.
@@ -124,7 +124,7 @@ Ele relê o projeto a cada 2 segundos, então acompanha o que os agentes alteram
 
 Instale com a opção `--gui` / `-Gui` do instalador. O instalador também coloca o `templates.tar.zst` ao lado do `mwp` e do `mwp-gui`: os dois leem dele os templates do `mwp init` e das novas tasks, módulos, SPECs e ADRs. Um `cargo install --path src/gui --locked` sozinho deixa esse arquivo na pasta do build (`target/release/`), então copie-o para o lado do binário.
 
-Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`. O que mudou em cada versão está no [CHANGELOG](src/gui/CHANGELOG.md).
+Rode `mwp-gui` dentro de um projeto, ou `mwp-gui caminho/do/seu-projeto`. O que mudou em cada versão está no [CHANGELOG](CHANGELOG.md).
 
 ## Repositório
 

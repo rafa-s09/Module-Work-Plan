@@ -62,7 +62,7 @@ When asked "execute T-0043" (or a company code that maps to it):
 7. **Update the modules:** new rules, the `## Tests` table, `updated:`, the changelog row with the task ID. Then run `mwp remap`: it checks module paths, dependencies and registered tests, and rewrites `map.md`.
 8. **Close:** fill `## Closure` with evidence for every criterion (command and result, or what you observed), then run `mwp task close T-0043`: it sets `status: done`, moves the file to `tasks/done/`, frees the locks and runs lint. The task is not done until lint reports no errors.
 
-If a `[manual]` criterion could not be checked, list what is missing, run `mwp task release T-0043 --status review` and stop.
+If a `[manual]` criterion could not be checked, list what is missing, run `mwp task review T-0043` and stop.
 
 **Rule of 3:** if a test or criterion still fails after 3 fix attempts, stop, report what you tried and your hypothesis, and wait for a person to decide whether to go on or take another route.
 
@@ -120,7 +120,7 @@ These are brakes, not punishments: they prevent excess and work outside the scop
 - Content the task needs cannot be found (a file, a resource, a document it cites). Never invent or download a replacement.
 - A link or reference is broken: a path, a URL or an ID (a module path the task is about to create is not broken).
 - A test or criterion still fails after 3 fix attempts.
-- An unexpected error cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing). Report the error and what you tried, then `mwp task release T-XXXX --status blocked`.
+- An unexpected error cannot be worked around inside the task's scope (a command or tool fails, a dependency or permission is missing). Report the error and what you tried, then `mwp task block T-XXXX`.
 - An ambiguity would change the result.
 
 Priority on conflict: constitution > accepted ADRs > module > task. Never resolve a conflict silently.
@@ -137,6 +137,7 @@ Priority on conflict: constitution > accepted ADRs > module > task. Never resolv
 | `mwp task new <title> [--size XS\|S\|M\|L\|XL\|XXL] [--modules a,b] [--reads a,b] [--refs T-XXXX] [--external CODE]` | Creates an open task from the template with the next T- ID reserved | `mwp next T --reserve` and copy the task template |
 | `mwp task start <T-XXXX> [--agent <name>]` | Claims the task and locks its modules; fails if another agent holds them. `MWP_AGENT` is the default name | Set `status: in_progress` |
 | `mwp task close <T-XXXX> [--replanned]` | Sets `status: done` (or `replanned`), moves the file to `tasks/done/`, frees the locks, runs lint. Refuses an empty `## Closure`, and `--replanned` without `**Replanning:**` | Set the status, move the file, check by reading |
+| `mwp task block <T-XXXX>` / `mwp task review <T-XXXX>` | Stops on the task (`blocked`) or hands it to a person (`review`); frees its locks | Set the status |
 | `mwp task release <T-XXXX> [--status open\|blocked\|review]` | Gives the task back without closing it and frees its locks | Set the status |
 | `mwp task-list [--status <s>] [--module <id>] [--all]` | Lists tasks with status, size, title, external codes and the agent on each task in progress | List `mwp/tasks/open/` |
 | `mwp locks` | Tasks in progress, their agents and the modules they lock | Read the `in_progress` tasks |

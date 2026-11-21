@@ -80,7 +80,7 @@ See the **[guide](assets/docs/guide.md)** for the full workflow, the skills and 
 |---|---|
 | `mwp init [--agent a,b]` | Creates the `mwp/` structure and the files of each agent; never overwrites |
 | `mwp task new` / `mwp task-list` | Creates a task with the next ID / lists tasks |
-| `mwp task start` / `close` / `release` | Claims a task and locks its modules for one agent / closes it and runs lint / gives it back |
+| `mwp task start` / `close` / `block` / `review` / `release` | Claims a task and locks its modules for one agent / closes it (or `--replanned`) and runs lint / stops on it / hands it to a person / gives it back |
 | `mwp locks` | Tasks in progress, their agents and locked modules |
 | `mwp context T-0001` | Files the agent will read for a task, with a token estimate |
 | `mwp next <T\|SP\|ADR\|TEST>` | Next free ID, optionally reserved in `.mwp/ledger.json` |
@@ -97,7 +97,7 @@ The CLI is optional: everything it does can be done by hand following the templa
 
 ## Editor (GUI)
 
-`mwp-gui` (version 0.1.3) is an optional desktop editor for the person following the work:
+`mwp-gui` (version 0.1.4) is an optional desktop editor for the person following the work:
 
 - **Explorer** of the `mwp/` files by section (project, modules with their subfolders, SPECs, ADRs, then tasks split into open and done; right-click Modules or a folder to add a module or a folder there), with broken files in red, and the agents at work with the modules they lock. **Rename** a file or folder (right-click, or F2 for the open file; a module keeps its ID) and drag files and folders onto another folder of Modules or Content to move them; ADRs and done tasks stay as they are.
 - **Markdown editor** with tabs: highlighted source with line numbers, a formatting toolbar (headings, bold, italic, code, lists, checklists, quotes, links) and a live preview, side by side or alone. The front matter shows as a property table in the preview.
@@ -124,7 +124,7 @@ It rereads the project every 2 seconds, so it follows what agents change.
 
 Install it with the installer's `--gui` / `-Gui` option. The installer also puts `templates.tar.zst` next to `mwp` and `mwp-gui`: both read the templates of `mwp init` and of new tasks, modules, SPECs and ADRs from it. A plain `cargo install --path src/gui --locked` leaves that file in the build folder (`target/release/`), so copy it next to the binary yourself.
 
-Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`. What changed in each version is in its [CHANGELOG](src/gui/CHANGELOG.md).
+Run `mwp-gui` inside a project, or `mwp-gui path/to/your-project`. What changed in each version is in its [CHANGELOG](CHANGELOG.md).
 
 ## Repository
 
