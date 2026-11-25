@@ -491,6 +491,7 @@ impl eframe::App for App {
 
         let title = match self.current() {
             Some(ed) => format!("{}{} — MWP", if ed.dirty() { "● " } else { "" }, ed.name()),
+            None if self.root.as_os_str().is_empty() => "MWP".to_string(),
             None => format!("{} — MWP", self.root.display()),
         };
         if title != self.title {
@@ -519,6 +520,27 @@ impl eframe::App for App {
                     if ui.button(ic(ICON_FOLDER_OPEN, tr("Open project…"))).clicked() {
                         self.dialog = Some(Dialog::Open { dir: self.root.display().to_string(), error: String::new() });
                     }
+                    // The open project is first in the list: offer the others.
+                    let others: Vec<PathBuf> = self.recent.iter().filter(|p| **p != self.root).cloned().collect();
+                    ui.add_enabled_ui(!others.is_empty(), |ui| {
+                        ui.menu_button(ic(ICON_HISTORY, tr("Open recent")), |ui| {
+                            for dir in others {
+                                if ui.button(folder_name(&dir)).on_hover_text(dir.display().to_string()).clicked() {
+                                    ask.action = Some(Action::Project(dir, false));
+                                }
+                            }
+                        });
+                    });
+                    // An empty folder is no project: the start screen, with New, Open and Recent.
+                    if ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_FOLDER_OFF, tr("Close project")))).clicked() {
+                        ask.action = Some(Action::Project(PathBuf::new(), false));
+                    }
+                    ui.separator();
+                    if ui.button(ic(ICON_LOGOUT, tr("Quit"))).clicked() {
+                        ask.action = Some(Action::Quit);
+                    }
+                });
+                ui.menu_button(tr("Project"), |ui| {
                     let go = egui::Button::new(ic(ICON_MANAGE_SEARCH, tr("Go to file…"))).shortcut_text(ctx.format_shortcut(&GO_TO_FILE));
                     if ui.add_enabled(self.view.is_ok(), go).clicked() {
                         self.dialog = Some(Dialog::QuickOpen { query: String::new(), selected: 0 });
@@ -541,10 +563,9 @@ impl eframe::App for App {
                         ask.ask_delete = deletable.clone();
                     }
                     ui.separator();
-                    reload = ui.button(ic(ICON_REFRESH, tr("Reload"))).clicked();
-                    ui.separator();
-                    if ui.button(ic(ICON_LOGOUT, tr("Quit"))).clicked() {
-                        ask.action = Some(Action::Quit);
+                    let rebuild = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SYNC, tr("Rebuild ID ledger"))));
+                    if rebuild.on_hover_text(tr("Write .mwp/ledger.json again from the highest ID of each prefix, like mwp ledger")).clicked() {
+                        self.dialog = Some(self.rebuild_ledger());
                     }
                 });
                 ui.menu_button(tr("Edit"), |ui| {
@@ -584,11 +605,8 @@ impl eframe::App for App {
                     ui.checkbox(&mut self.show_problems, tr("Bottom panel (Problems, Search)"));
                 });
                 ui.menu_button(tr("Settings"), |ui| {
+                    reload = ui.button(ic(ICON_REFRESH, tr("Reload project"))).on_hover_text(tr("Read the project from disk again (it also happens every 2 seconds)")).clicked();
                     ask.agents = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SMART_TOY, tr("Project agents…")))).clicked();
-                    let rebuild = ui.add_enabled(self.view.is_ok(), egui::Button::new(ic(ICON_SYNC, tr("Rebuild ID ledger"))));
-                    if rebuild.on_hover_text(tr("Write .mwp/ledger.json again from the highest ID of each prefix, like mwp ledger")).clicked() {
-                        self.dialog = Some(self.rebuild_ledger());
-                    }
                     ui.separator();
                     if ui.button(ic(ICON_SETTINGS, tr("Preferences…"))).clicked() {
                         self.dialog = Some(Dialog::Settings { lang: self.lang.clone(), langs: i18n::available(), error: String::new() });
@@ -634,7 +652,9 @@ impl eframe::App for App {
                         ui.add_space(80.0);
                         ui.label(ICON_HUB.rich_text().size(56.0).color(ui.visuals().weak_text_color()));
                         ui.heading(tr("No MWP project open"));
-                        ui.colored_label(ui.visuals().error_fg_color, e);
+                        if !self.root.as_os_str().is_empty() {
+                            ui.colored_label(ui.visuals().error_fg_color, e);
+                        }
                         ui.add_space(12.0);
                         new_dialog = ui.button(ic(ICON_CREATE_NEW_FOLDER, tr("New project…"))).clicked();
                         open_dialog = ui.button(ic(ICON_FOLDER_OPEN, tr("Open project…"))).clicked();
@@ -969,6 +989,21 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn closing_the_project_leaves_the_start_screen() {
+        let root = std::env::temp_dir().join(format!("mwp-gui-close-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        scaffold::init(&root, Some("Demo"), &[&AGENTS[0]], false, scaffold::DEFAULT).unwrap();
+        let (mut app, ctx) = (App::new(root.clone()), egui::Context::default());
+        app.apply(&ctx, Action::Open(root.join("mwp/PROJECT.md")));
+        app.apply(&ctx, Action::Project(PathBuf::new(), false));
+        assert!(app.view.is_err() && app.tabs.is_empty() && app.root.as_os_str().is_empty());
+        // Opened again, it comes back with the tab it had.
+        app.apply(&ctx, Action::Project(root.clone(), false));
+        assert!(app.view.is_ok() && app.current().is_some_and(|e| e.path.ends_with("PROJECT.md")));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn explorer_lists_docs_and_flags_broken_ones() {
         let root = std::env::temp_dir().join(format!("mwp-gui-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -1087,7 +1122,7 @@ mod tests {
         assert_eq!(h.state().tabs.len(), 2);
         h.state_mut().tabs.iter_mut().for_each(|t| t.text.push_str("\nall"));
         h.run_steps(2);
-        h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
+        h.get_all_by_label("Project").next().unwrap().click(); // the menu; the explorer has a "Project" section too
         h.run_steps(3);
         h.get_by_label_contains("Save all").click();
         h.run_steps(3);
@@ -1106,8 +1141,8 @@ mod tests {
         assert_eq!(h.state().tabs.len(), 1);
         assert!(!fs::read_to_string(root.join("mwp/constitution.md")).unwrap().contains("lost"));
 
-        // File > New module creates it from the template, adds it to map.md and opens it.
-        h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
+        // Project > New module creates it from the template, adds it to map.md and opens it.
+        h.get_all_by_label("Project").next().unwrap().click(); // the menu; the explorer has a "Project" section too
         h.run_steps(3);
         h.get_by_label_contains("New module…").click();
         h.run_steps(30);
@@ -1124,8 +1159,8 @@ mod tests {
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(module.clone()));
         assert!(fs::read_to_string(root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in and sessions |"));
 
-        // File > New task starts with the open module checked.
-        h.get_all_by_label("File").next().unwrap().click(); // the menu; the module template has a "File" column
+        // Project > New task starts with the open module checked.
+        h.get_all_by_label("Project").next().unwrap().click(); // the menu; the explorer has a "Project" section too
         h.run_steps(3);
         h.get_by_label_contains("New task…").click();
         h.run_steps(30);
@@ -1151,9 +1186,9 @@ mod tests {
         assert!(!new_task.exists() && h.state().dialog.is_none());
         assert!(h.state().tabs.iter().all(|t| t.path != new_task));
 
-        // File > New SPEC: owned by the module open in the editor.
+        // Project > New SPEC: owned by the module open in the editor.
         assert_eq!(h.state().current().map(|e| e.path.clone()), Some(module.clone()));
-        h.get_all_by_label("File").next().unwrap().click();
+        h.get_all_by_label("Project").next().unwrap().click(); // the menu; the explorer has a "Project" section too
         h.run_steps(3);
         h.get_by_label_contains("New SPEC…").click();
         h.run_steps(30);
@@ -1294,9 +1329,9 @@ mod tests {
         h.run_steps(3);
         assert!(!stale(&h) && fs::read_to_string(root.join("mwp/map.md")).unwrap().contains("| user-auth | domain | Sign in |"));
 
-        // File > New ADR, then a second one that replaces it.
+        // Project > New ADR, then a second one that replaces it.
         for (title, replaces) in [("Store money in cents", ""), ("Store money as decimal", "ADR-0001")] {
-            h.get_all_by_label("File").next().unwrap().click();
+            h.get_all_by_label("Project").next().unwrap().click(); // the menu; the explorer has a "Project" section too
             h.run_steps(3);
             h.get_by_label_contains("New ADR…").click();
             h.run_steps(30);

@@ -2,6 +2,15 @@
 
 What changed in each version of the CLI and core (`mwp`) and of the desktop editor (`mwp-gui`).
 
+## mwp 0.3.1 · mwp-gui 0.1.5 (2026-11-25)
+
+### CLI and core
+
+### GUI
+- **File > Open recent** and **File > Close project:** switch to a recent project in one click, or close the open one and go back to the start screen (New, Open, Recent).
+- **Project menu:** Go to file, New task, New module, New SPEC, New ADR, Save, Save all, Close file, Delete file and Rebuild ID ledger moved here from the File menu, which keeps New project, Open project, Open recent, Close project and Quit.
+
+
 ## mwp 0.3.1 · mwp-gui 0.1.4 (2026-11-20)
 
 ### CLI and core
@@ -26,8 +35,8 @@ What changed in each version of the CLI and core (`mwp`) and of the desktop edit
 - **Task sizes** in New task and the board filter.
 - **Replan:** a task in progress, blocked or in review can be closed as `replanned` (task header or card menu). It shows in Done with its own icon and can no longer be dragged.
 - **New project** has a **Template** choice, with each package's name, details and thumbnail; the dialog scrolls when the window is short.
-- **Settings > Project agents:** moved from the File menu, next to Rebuild ID ledger.
-- **Settings > Rebuild ID ledger:** runs `mwp ledger` and shows the last ID of each prefix, or why it could not (duplicate IDs).
+- **Settings > Reload project** (renamed from Reload; it reads the project from disk again, which also happens every 2 seconds) and **Settings > Project agents:** moved from the File menu.
+- **Project > Rebuild ID ledger:** runs `mwp ledger` and shows the last ID of each prefix, or why it could not (duplicate IDs).
 - **Approve plan:** the header of an L, XL or XXL task without approval has **Approve plan**, which sets `plan_approved:` to today once `## Plan` is written.
 
 ## mwp 0.3.0 · mwp-gui 0.1.3 (2026-11-16)
